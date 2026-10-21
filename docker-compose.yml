@@ -1,0 +1,25 @@
+services:
+  api:
+    build: ./backend
+    container_name: lolis-api
+    restart: unless-stopped
+    environment:
+      - ADMIN_TOKEN=${ADMIN_TOKEN:?请在 .env 中设置 ADMIN_TOKEN}
+      - DATA_DIR=/data
+      - MAX_UPLOAD_MB=${MAX_UPLOAD_MB:-50}
+      - RATE_LIMIT=${RATE_LIMIT:-120}
+    volumes:
+      - ./data:/data
+    expose:
+      - "8000"
+
+  web:
+    build: ./frontend
+    container_name: lolis-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8300}:80"
+    volumes:
+      - ./data:/data:ro
+    depends_on:
+      - api
