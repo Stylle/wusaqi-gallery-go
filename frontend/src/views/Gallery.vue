@@ -1,15 +1,15 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { getImages, copyText, absUrl } from '../api.js'
+import { store } from '../auth.js'
 
 const items = ref([])
 const page = ref(1)
 const total = ref(0)
 const hasMore = ref(false)
 const loading = ref(false)
-
 const current = ref(null)
-const ctx = ref(null) // {x, y, urls: [...]}
+const ctx = ref(null)
 
 async function load(p = 1) {
   loading.value = true
@@ -34,27 +34,48 @@ function menu(e, item = current.value) {
     { label: `复制压缩图 URL${item.compressed ? '' : '（无压缩版）'}`, url: item.compressed ? absUrl(item.compressed) : null },
     { label: '复制缩略图 URL', url: absUrl(item.thumb) },
   ]
-  ctx.value = { x: Math.min(e.clientX, innerWidth - 230), y: e.clientY, urls }
+  ctx.value = { x: Math.min(e.clientX, innerWidth - 240), y: e.clientY, urls }
 }
 
 async function pick(u) {
-  if (u.url) await copyText(u.url)
   ctx.value = null
+  if (!store.ok) { alert('游客不能复制链接，请先登录'); return }
+  if (u.url) await copyText(u.url)
 }
 
-function closeAll() { ctx.value = null; }
+// 「复制链接」按钮：阻止冒泡，避免 document click 立刻把菜单关掉
+function openMenu(e, item) {
+  e.stopPropagation()
+  menu(e, item)
+}
+
 function closeLightbox() { current.value = null; ctx.value = null }
 
 onMounted(() => {
   load()
-  document.addEventListener('click', closeAll)
+  document.addEventListener('click', () => { ctx.value = null })
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeLightbox() })
+})
+onUnmounted(() => {
+  document.removeEventListener('click', () => { ctx.value = null })
+  document.removeEventListener('keydown', closeLightbox)
 })
 </script>
 
 <template>
-  <p class="muted">共 {{ total }} 张 · 点击看大图 · 大图上右键可复制原图 / 压缩图链接</p>
-  <div class="grid">
+  <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+    <h2 class="page-title">Gallery</h2>
+    <span class="muted">共 {{ total }} 张 · 点击看大图{{ store.ok ? ' · 右键复制链接' : '' }}</span>
+  </div>
+
+  <div v-if="loading" class="grid">
+    <div v-for="i in 12" :key="i" class="skel" style="aspect-ratio:1"></div>
+  </div>
+  <div v-else-if="!items.length" class="lockbox">
+    <div class="icon">🖼️</div>
+    <p class="muted">空っぽ / 还没有图片</p>
+  </div>
+  <div v-else class="grid">
     <div v-for="it in items" :key="it.id" class="cell" @click="open(it)">
       <img :src="it.thumb || it.compressed || it.url" :alt="it.key" loading="lazy"
         @contextmenu="menu($event, it)" />
@@ -75,12 +96,14 @@ onMounted(() => {
       <span v-if="current.compressedSize">{{ (current.compressedSize / 1024).toFixed(0) }} KB(压缩)</span>
     </div>
     <div class="actions">
-      <button @click="menu($event, current)">复制链接 ▾</button>
+      <button @click="openMenu($event, current)">复制链接 ▾</button>
       <button class="ghost" @click="closeLightbox">关闭 (Esc)</button>
     </div>
   </div>
 
-  <div v-if="ctx" class="ctxmenu" :style="{ left: ctx.x + 'px', top: ctx.y + 'px' }">
-    <button v-for="(u, i) in ctx.urls" :key="i" :disabled="!u.url" @click="pick(u)">{{ u.label }}</button>
+  <div v-if="ctx" class="ctxmenu" :style="{ left: ctx.x + 'px', top: ctx.y + 'px' }" @click.stop>
+    <button v-for="(u, i) in ctx.urls" :key="i" :disabled="!u.url || !store.ok"
+      @click="pick(u)">{{ u.label }}{{ !store.ok ? ' 🔒' : '' }}</button>
+    <div v-if="!store.ok" class="muted" style="padding:4px 12px 6px;font-size:12px">登录后可复制链接</div>
   </div>
 </template>

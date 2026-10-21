@@ -1,66 +1,52 @@
 <script setup>
 import { ref } from 'vue'
-import { verifyToken, uploadFiles, getSettings, saveSettings, reindex } from '../api.js'
+import { uploadOne } from '../api.js'
+import { store, checkAuth } from '../auth.js'
 
-const token = ref(localStorage.getItem('lg_token') || '')
-const verified = ref(false)
+const token = ref(store.token)
 const msg = ref('')
 const over = ref(false)
-const results = ref([])
 const fileInput = ref(null)
-
-const settings = ref(null)
-const sMsg = ref('')
+const queue = ref([]) // {name, status: pending|uploading|done|error, progress, item?, error?}
 
 async function doVerify() {
   msg.value = ''
   try {
-    await verifyToken(token.value)
     localStorage.setItem('lg_token', token.value)
-    verified.value = true
-    msg.value = 'Token 有效'
-    settings.value = await getSettings(token.value)
-  } catch (e) { msg.value = 'Token 无效：' + e.message }
+    store.token = token.value
+    await checkAuth()
+    msg.value = store.ok ? 'Token 有效，已登录 ✓' : 'Token 无效'
+  } catch (e) { msg.value = '验证失败：' + e.message }
 }
 
-async function doUpload(files) {
-  if (!files?.length || !verified.value) return
-  msg.value = '上传中…'
-  try {
-    const d = await uploadFiles(token.value, [...files])
-    results.value = [...d.results, ...results.value]
-    msg.value = `完成：${d.results.filter(r => r.ok).length} 成功 / ${d.results.filter(r => !r.ok).length} 失败`
-  } catch (e) { msg.value = '上传失败：' + e.message }
+async function handleFiles(files) {
+  if (!store.ok || !files?.length) return
+  for (const f of files) {
+    const entry = { name: f.name, status: 'uploading', progress: 0, item: null, error: '', preview: URL.createObjectURL(f) }
+    queue.value.unshift(entry)
+    try {
+      entry.item = await uploadOne(store.token, f, (p) => { entry.progress = p })
+      entry.status = 'done'
+    } catch (e) {
+      entry.status = 'error'
+      entry.error = e.message
+    }
+  }
 }
 
-async function doSave() {
-  sMsg.value = '保存中…'
-  try {
-    settings.value = await saveSettings(token.value, {
-      format: settings.value.comp_format,
-      quality: Number(settings.value.comp_quality),
-      max_width: Number(settings.value.comp_max_width),
-    })
-    sMsg.value = '已保存（仅对新上传生效，历史压缩版不变）'
-  } catch (e) { sMsg.value = '保存失败：' + e.message }
-}
+function pick(e) { handleFiles(e.target.files); e.target.value = '' }
 
-async function doReindex() {
-  sMsg.value = '扫描中…'
-  try {
-    const d = await reindex(token.value)
-    sMsg.value = `扫描 ${d.scanned} 个文件，补录 ${d.added} 条`
-  } catch (e) { sMsg.value = '失败：' + e.message }
-}
+function onDrop(e) { over.value = false; handleFiles(e.dataTransfer.files) }
 </script>
 
 <template>
-  <div class="panel" v-if="!verified">
+  <!-- 登录面板：游客也看得到，方便进店登录 -->
+  <div class="panel" v-if="!store.ok">
     <h3>管理员登录</h3>
     <div class="row">
       <input v-model="token" placeholder="ADMIN_TOKEN" type="password" style="min-width:260px"
         @keyup.enter="doVerify" />
-      <button @click="doVerify">验证</button>
+      <button @click="doVerify">登录</button>
       <span class="muted">{{ msg }}</span>
     </div>
   </div>
@@ -71,43 +57,30 @@ async function doReindex() {
       @click="fileInput.click()"
       @dragover.prevent="over = true"
       @dragleave="over = false"
-      @drop.prevent="over = false; doUpload($event.dataTransfer.files)">
-      拖拽图片到这里，或点击选择（可多选）
-      <input ref="fileInput" type="file" accept="image/*" multiple hidden
-        @change="doUpload($event.target.files); $event.target.value = ''" />
+      @drop.prevent="onDrop">
+      拖拽图片到这里，或点击选择（可多选，逐个上传并显示进度）
+      <input ref="fileInput" type="file" accept="image/*" multiple hidden @change="pick" />
     </div>
-    <p class="muted">{{ msg }}</p>
 
-    <div class="result-list">
-      <div v-for="(r, i) in results" :key="i" class="result-item">
-        <img v-if="r.ok" :src="r.item.thumb || r.item.url" alt="" />
+    <div class="prog-list">
+      <div v-for="(e, i) in queue" :key="i" class="prog-item">
+        <img :src="e.item?.thumb || e.preview" alt="" />
         <div class="info">
-          <div>{{ r.name }} <span :class="r.ok ? 'tag-ok' : 'tag-err'">{{ r.ok ? '✓' : '✗ ' + r.error }}</span></div>
-          <div class="mono muted" v-if="r.ok">{{ r.item.key }} · {{ (r.item.size / 1024).toFixed(0) }}KB
-            → 压缩 {{ r.item.compressedSize ? (r.item.compressedSize / 1024).toFixed(0) + 'KB' : '跳过' }}</div>
+          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+            <span>{{ e.name }}</span>
+            <span :class="e.status === 'done' ? 'tag-ok' : e.status === 'error' ? 'tag-err' : 'muted'">
+              {{ e.status === 'uploading' ? Math.round(e.progress * 100) + '%'
+                : e.status === 'done' ? '✓ ' + (e.item.size / 1024).toFixed(0) + 'KB → 压缩 '
+                  + (e.item.compressedSize ? (e.item.compressedSize / 1024).toFixed(0) + 'KB' : '跳过')
+                : '✗ ' + e.error }}
+            </span>
+          </div>
+          <div class="bar" :class="{ done: e.status === 'done' }">
+            <div :style="{ width: (e.status === 'done' ? 100 : e.progress * 100) + '%' }"></div>
+          </div>
+          <div class="mono muted" v-if="e.item" style="margin-top:3px">{{ e.item.key }}</div>
         </div>
       </div>
-    </div>
-
-    <div class="panel" v-if="settings">
-      <h3>压缩设置（对新上传生效）</h3>
-      <div class="row">
-        <label>格式
-          <select v-model="settings.comp_format">
-            <option value="webp">WebP（推荐，最小）</option>
-            <option value="jpeg">JPEG</option>
-            <option value="png">PNG（无损）</option>
-          </select>
-        </label>
-        <label>质量 <input type="number" min="1" max="100" v-model="settings.comp_quality" style="width:80px" /></label>
-        <label>最大宽度 <input type="number" min="0" step="100" v-model="settings.comp_max_width" style="width:100px" /> px（0=不缩放）</label>
-        <button @click="doSave">保存设置</button>
-      </div>
-      <div class="row">
-        <button class="ghost" @click="doReindex">重建索引（reindex）</button>
-        <span class="muted">{{ sMsg }}</span>
-      </div>
-      <p class="muted">历史图片的压缩版保持不变；改完设置后新上传按新参数生成。</p>
     </div>
   </template>
 </template>

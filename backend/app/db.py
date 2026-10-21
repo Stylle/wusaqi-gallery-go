@@ -30,11 +30,26 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 """
 
-# 压缩设置默认值（后台可在前端调整）
+# 全部可配置项与默认值（后台可调，flat 键值对，便于扩展新配置项/插件）
 DEFAULT_SETTINGS = {
-    "comp_format": "webp",   # webp | jpeg | png
-    "comp_quality": "80",    # 1-100
-    "comp_max_width": "2560" # 0 = 不缩放
+    # 站点信息
+    "site_title": "lolis-gallery",
+    "site_icon": "",          # favicon URL 或 emoji，空 = 默认
+    "site_tags": "画廊,随机图,自部署",   # 首页展示标签，逗号分隔
+    "site_footer": "Powered by lolis-gallery",
+    # 图片压缩
+    "comp_format": "webp",    # webp | jpeg | png
+    "comp_quality": "80",     # 1-100
+    "comp_max_width": "2560", # 0 = 不缩放
+    # 权限
+    "random_public": "0",     # 1 = 未登录也可用随机图 API（外链场景）
+    # 流量防御
+    "rate_limit": "120",      # 每 IP 每分钟随机图请求上限，0 = 关闭
+    "rate_ban_minutes": "10", # 超限封禁时长
+    "webhook_url": "",        # 超限/爆破告警 webhook（POST JSON）
+    # 安全（防爆破）
+    "auth_max_fails": "10",   # 累计鉴权失败次数阈值
+    "auth_ban_minutes": "10", # 触发后封禁时长
 }
 
 

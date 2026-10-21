@@ -3,11 +3,17 @@ const json = async (res) => {
   return res.json()
 }
 
+const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('lg_token') || ''}` })
+
 export const getImages = (page, limit, sort = 'latest') =>
   fetch(`/api/images?page=${page}&limit=${limit}&sort=${sort}`).then(json)
 
+export const getPublicSettings = () => fetch('/api/public/settings').then(json)
+
 export const getRandom = (variant) =>
-  fetch(`/api/random?variant=${variant}`).then(json)
+  fetch(`/api/random?variant=${variant}`, { headers: authHeaders() }).then(json)
+
+export const randomImageUrl = (variant) => `/api/random/image?variant=${variant}`
 
 export const verifyToken = (token) =>
   fetch('/api/admin/verify', { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
@@ -23,19 +29,35 @@ export const saveSettings = (token, patch) =>
     body: JSON.stringify(patch),
   }).then(json)
 
-export const uploadFiles = (token, files) => {
-  const fd = new FormData()
-  files.forEach((f) => fd.append('files', f))
-  return fetch('/api/admin/upload', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body: fd,
-  }).then(json)
-}
-
 export const reindex = (token) =>
   fetch('/api/admin/reindex', { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
     .then(json)
+
+export const getBans = (token) =>
+  fetch('/api/admin/bans', { headers: { Authorization: `Bearer ${token}` } }).then(json)
+
+// 单文件上传 + 逐文件进度回调（0~1）
+export function uploadOne(token, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const fd = new FormData()
+    fd.append('files', file)
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', '/api/admin/upload')
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total)
+    }
+    xhr.onload = () => {
+      try {
+        const d = JSON.parse(xhr.responseText)
+        if (xhr.status < 300 && d.results?.[0]?.ok) resolve(d.results[0].item)
+        else reject(new Error(d.results?.[0]?.error || d.detail || `HTTP ${xhr.status}`))
+      } catch { reject(new Error(`HTTP ${xhr.status}`)) }
+    }
+    xhr.onerror = () => reject(new Error('network error'))
+    xhr.send(fd)
+  })
+}
 
 export const absUrl = (p) => (p ? location.origin + p : '')
 

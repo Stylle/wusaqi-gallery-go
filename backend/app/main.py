@@ -1,12 +1,21 @@
-"""lolis-gallery 后端：复刻 lolis.im 的画廊 + 随机图 API，双 URL 流量优化策略。"""
+"""lolis-gallery 后端。
+
+v2：权限门控（游客仅画廊）+ 流量防御（限流→webhook 告警→封禁）
+    + 防爆破（鉴权失败计数封禁）+ 站点信息/外观全部后台可配。
+设计约定：新增配置项只需在 db.DEFAULT_SETTINGS 加键 + 在 main.py 的
+PUBLIC_SETTING_KEYS / SETTING_RULES 声明规则，前后端自动生效，方便后续扩展插件。
+"""
 import io
+import json
 import os
 import secrets
+import threading
 import time
+import urllib.request
 from collections import defaultdict
 from datetime import datetime, timezone
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -29,34 +38,109 @@ app.mount("/files", StaticFiles(directory=config.UPLOADS_DIR), name="files")
 app.mount("/thumbs", StaticFiles(directory=config.THUMBS_DIR), name="thumbs")
 app.mount("/compressed", StaticFiles(directory=config.COMPRESSED_DIR), name="compressed")
 
+# ---------- 防御状态（内存态，重启清零） ----------
+bans: dict[str, list] = {}            # ip -> [until_ts, reason]
+_rate_windows: dict[str, list[float]] = defaultdict(list)  # ip -> [timestamps]
+_auth_fails: dict[str, list[float]] = defaultdict(list)    # ip -> [fail timestamps]
 
-# ---------- 限流（只挡 /api/random*，省流量第一道闸） ----------
-_buckets: dict[str, list[float]] = defaultdict(list)
+
+def client_ip(request: Request) -> str:
+    return request.headers.get("x-real-ip") or (
+        request.client.host if request.client else "?")
 
 
+def is_banned(ip: str) -> tuple[bool, str]:
+    entry = bans.get(ip)
+    if entry and entry[0] > time.time():
+        return True, entry[1]
+    bans.pop(ip, None)
+    return False, ""
+
+
+def ban_ip(ip: str, minutes: int, reason: str) -> None:
+    bans[ip] = [time.time() + minutes * 60, reason]
+
+
+def fire_webhook(event: str, **fields) -> None:
+    """异步尽力投递 webhook 告警（参考 cf-server-monitor 的通知形态）。"""
+    url = db.get_settings().get("webhook_url") or ""
+    if not url.startswith(("http://", "https://")):
+        return
+    payload = json.dumps({
+        "event": event, "site": db.get_settings().get("site_title", "lolis-gallery"),
+        "time": datetime.now(timezone.utc).isoformat(timespec="seconds"), **fields,
+    }).encode()
+
+    def _post():
+        try:
+            req = urllib.request.Request(
+                url, data=payload, headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=5)
+        except Exception:
+            pass  # 告警失败不影响主流程
+    threading.Thread(target=_post, daemon=True).start()
+
+
+# ---------- 限流中间件（随机图接口） ----------
 @app.middleware("http")
-async def rate_limit(request, call_next):
-    if config.RATE_LIMIT > 0 and request.url.path.startswith("/api/random"):
-        ip = request.headers.get("x-real-ip") or (
-            request.client.host if request.client else "?")
+async def rate_limit(request: Request, call_next):
+    ip = client_ip(request)
+    banned, reason = is_banned(ip)
+    if banned:
+        return JSONResponse({"error": f"banned until {datetime.fromtimestamp(bans[ip][0], timezone.utc).isoformat()} ({reason})"},
+                            status_code=429)
+    s = db.get_settings()
+    limit = int(s.get("rate_limit", "0") or 0)
+    if request.url.path.startswith("/api/random") and limit > 0:
         now = time.time()
-        window = [t for t in _buckets[ip] if now - t < 60]
-        if len(window) >= config.RATE_LIMIT:
-            return JSONResponse({"error": "rate limited"}, status_code=429)
+        window = [t for t in _rate_windows[ip] if now - t < 60]
+        if len(window) >= limit:
+            ban_minutes = max(1, int(s.get("rate_ban_minutes", "10")))
+            ban_ip(ip, ban_minutes, "rate limit exceeded")
+            _rate_windows.pop(ip, None)
+            fire_webhook("rate_limit", ip=ip, path=request.url.path,
+                         limit_per_minute=limit, ban_minutes=ban_minutes)
+            return JSONResponse({"error": f"rate limited, banned {ban_minutes}min"},
+                                status_code=429)
         window.append(now)
-        _buckets[ip] = window
-        if len(_buckets) > 10000:  # 防内存膨胀
-            _buckets.clear()
+        _rate_windows[ip] = window
+        if len(_rate_windows) > 10000:
+            _rate_windows.clear()
     return await call_next(request)
 
 
-def require_admin(authorization: str = Header(default="")):
+# ---------- 鉴权（带防爆破） ----------
+def client_ip_dep(request: Request) -> str:
+    return client_ip(request)
+
+
+def require_admin(request: Request, authorization: str = Header(default="")) -> str:
+    ip = client_ip(request)
+    banned, reason = is_banned(ip)
+    if banned:
+        raise HTTPException(429, f"banned ({reason})")
+
     token = authorization.removeprefix("Bearer ").strip()
-    if not token or not secrets.compare_digest(token, config.ADMIN_TOKEN):
-        raise HTTPException(401, "invalid token")
-    return token
+    if token and secrets.compare_digest(token, config.ADMIN_TOKEN):
+        _auth_fails.pop(ip, None)  # 成功即清零
+        return token
+
+    now = time.time()
+    fails = [t for t in _auth_fails[ip] if now - t < 600]
+    fails.append(now)
+    _auth_fails[ip] = fails
+    s = db.get_settings()
+    max_fails = max(1, int(s.get("auth_max_fails", "10")))
+    if len(fails) >= max_fails:
+        ban_minutes = max(1, int(s.get("auth_ban_minutes", "10")))
+        ban_ip(ip, ban_minutes, "auth brute force")
+        _auth_fails.pop(ip, None)
+        fire_webhook("auth_brute_force", ip=ip, fails=len(fails), ban_minutes=ban_minutes)
+        raise HTTPException(429, f"too many failures, banned {ban_minutes}min")
+    raise HTTPException(401, "invalid token")
 
 
+# ---------- 序列化与上传 ----------
 def item_json(row: dict) -> dict:
     return {
         "id": row["id"],
@@ -97,7 +181,7 @@ def save_one(data: bytes, filename: str) -> dict:
         img.load()
         width, height = img.size
 
-    thumb_rel = compress.make_thumb(data, key)
+    compress.make_thumb(data, key)
 
     s = db.get_settings()
     c_rel = None
@@ -124,11 +208,19 @@ def save_one(data: bytes, filename: str) -> dict:
     return item_json(row)
 
 
-# ---------- 公开接口 ----------
+# ---------- 公开接口（游客可用：画廊浏览 + 站点信息） ----------
+PUBLIC_SETTING_KEYS = ("site_title", "site_icon", "site_tags", "site_footer", "random_public")
+
 
 @app.get("/api/health")
 def health():
     return {"ok": True}
+
+
+@app.get("/api/public/settings")
+def public_settings():
+    s = db.get_settings()
+    return {k: s.get(k, "") for k in PUBLIC_SETTING_KEYS}
 
 
 @app.get("/api/images")
@@ -150,8 +242,16 @@ def _random_row(variant: str) -> tuple[dict, str]:
     return row, f"/compressed/{row['c_key']}"
 
 
+def random_guard(request: Request, authorization: str = Header(default="")):
+    """随机图默认仅登录可用；后台开启 random_public 后对游客开放（外链场景）。"""
+    if db.get_settings().get("random_public") == "1":
+        return None
+    return require_admin(request, authorization)
+
+
 @app.get("/api/random")
-def random_json(variant: str = "compressed", redirect: bool = False):
+def random_json(variant: str = "compressed", redirect: bool = False,
+                __=Depends(random_guard)):
     row, path = _random_row(variant)
     if redirect:
         return RedirectResponse(path, status_code=302)
@@ -159,7 +259,7 @@ def random_json(variant: str = "compressed", redirect: bool = False):
 
 
 @app.get("/api/random/image")
-def random_image(variant: str = "compressed"):
+def random_image(variant: str = "compressed", __=Depends(random_guard)):
     _row, path = _random_row(variant)
     return RedirectResponse(path, status_code=302)
 
@@ -178,13 +278,24 @@ def get_settings(_: str = Depends(require_admin)):
 
 @app.put("/api/admin/settings")
 def put_settings(patch: dict, _: str = Depends(require_admin)):
+    """通用配置更新：只接受 DEFAULT_SETTINGS 里声明的键，按类型夹紧。"""
+    defaults = db.DEFAULT_SETTINGS
     clean = {}
-    if patch.get("format") in config.COMP_FORMATS:
-        clean["comp_format"] = patch["format"]
-    if "quality" in patch:
-        clean["comp_quality"] = max(1, min(100, int(patch["quality"])))
-    if "max_width" in patch:
-        clean["comp_max_width"] = max(0, int(patch["max_width"]))
+    for k, v in (patch or {}).items():
+        if k not in defaults:
+            continue
+        if k in ("comp_format",):
+            if v in config.COMP_FORMATS:
+                clean[k] = v
+        elif k in ("comp_quality",):
+            clean[k] = max(1, min(100, int(v)))
+        elif k in ("comp_max_width", "rate_limit", "rate_ban_minutes",
+                   "auth_max_fails", "auth_ban_minutes"):
+            clean[k] = max(0, int(v))
+        elif k in ("random_public",):
+            clean[k] = "1" if (v is True or str(v).lower() in ("1", "true", "on")) else "0"
+        else:  # 文本类：site_title / site_icon / site_tags / site_footer / webhook_url
+            clean[k] = str(v).strip()[:500]
     if not clean:
         raise HTTPException(400, "no valid fields")
     db.update_settings(clean)
@@ -192,7 +303,8 @@ def put_settings(patch: dict, _: str = Depends(require_admin)):
 
 
 @app.post("/api/admin/upload")
-def upload(files: list[UploadFile] = File(...), _: str = Depends(require_admin)):
+def upload(request: Request, files: list[UploadFile] = File(...),
+           _: str = Depends(require_admin)):
     results = []
     for f in files:
         name = f.filename or "unnamed"
@@ -226,3 +338,11 @@ def reindex(_: str = Depends(require_admin)):
             except Exception:
                 continue
     return {"scanned": scanned, "added": added}
+
+
+@app.get("/api/admin/bans")
+def list_bans(_: str = Depends(require_admin)):
+    """当前封禁列表（后台可观察防御状态）。"""
+    now = time.time()
+    return {"bans": [{"ip": ip, "reason": r, "until": datetime.fromtimestamp(t, timezone.utc).isoformat()}
+                     for ip, (t, r) in bans.items() if t > now]}

@@ -1,10 +1,9 @@
 <template>
-  <h2>About</h2>
-  <p>lolis-gallery —— 一个自部署的二次元图片收藏画廊，附带随机图片 API。</p>
+  <h2 class="page-title">About</h2>
+  <p>自部署的二次元图片收藏画廊，附带随机图片 API。功能形态复刻自 lolis.im，视觉与交互为独立设计。</p>
   <p class="muted">
-    复刻自 lolis.im（ギャラリー / a little gallery）的功能形态，
-    技术栈：Vue 3 + Vite / FastAPI / SQLite / Pillow / nginx，
-    双 URL 策略（原图 + 可配置压缩版）为家庭服务器省流量而生。
+    三态主题（亮/暗/跟随系统）· 双 URL 省流量策略 · 后台全配置化（站点信息/压缩/流量防御/安全）
+    · webhook 告警 · 树形配置面板。
   </p>
-  <p class="muted mono">/gallery · /random · /upload · /api — enjoy.</p>
+  <p class="muted mono">Vue 3 + Vite / FastAPI / SQLite / Pillow / nginx — built for home NAS.</p>
 </template>
