@@ -6,6 +6,7 @@ v3：加用户体系（users/sessions）+ 图片归属与标签（images.owner_i
 import random
 import sqlite3
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 from . import config, util
@@ -14,6 +15,8 @@ _lock = threading.Lock()          # 写操作串行化（避免 SQLITE_BUSY）
 _init_lock = threading.Lock()     # 建表/迁移只跑一次
 _schema_ready = False
 _local = threading.local()        # 每线程一条连接：绝不能跨线程共用 Connection
+_conns: list = []                 # 已建立的连接（恢复备份时统一关闭）
+_conns_lock = threading.Lock()
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS images (
@@ -77,6 +80,30 @@ CREATE TABLE IF NOT EXISTS visits (
 );
 CREATE INDEX IF NOT EXISTS idx_visits_day ON visits(day);
 CREATE INDEX IF NOT EXISTS idx_visits_ip ON visits(ip);
+
+-- 封禁名单（持久化，重启不清零）
+CREATE TABLE IF NOT EXISTS bans (
+    ip         TEXT PRIMARY KEY,
+    until_ts   INTEGER NOT NULL,     -- 解封时间（unix 秒）
+    reason     TEXT NOT NULL,
+    hits       INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_bans_until ON bans(until_ts);
+
+-- IP 白名单（单 IP 或 CIDR，命中则永不封禁、不参与限流）
+CREATE TABLE IF NOT EXISTS ip_whitelist (
+    pattern    TEXT PRIMARY KEY,
+    note       TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
+
+-- 永久黑名单（单 IP 或 CIDR，命中直接拒绝，不参与限流判定）
+CREATE TABLE IF NOT EXISTS ip_blacklist (
+    pattern    TEXT PRIMARY KEY,
+    note       TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
 
 -- IP 归属地缓存（只查一次，7 天刷新）
 CREATE TABLE IF NOT EXISTS ip_geo (
@@ -218,8 +245,16 @@ def get_conn() -> sqlite3.Connection:
     改为线程本地连接，建表/迁移用全局锁保证只执行一次。
     """
     conn = getattr(_local, "conn", None)
+    if conn is not None:
+        try:
+            conn.execute("SELECT 1")     # 备份恢复会关掉所有旧连接
+        except Exception:
+            conn = None
+            _local.conn = None
     if conn is None:
         conn = sqlite3.connect(config.DB_PATH, timeout=15)
+        with _conns_lock:
+            _conns.append(conn)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=15000")
@@ -611,3 +646,144 @@ def geo_put(ip: str, location: str) -> None:
             "checked_at = excluded.checked_at",
             (ip, location, now_iso()))
         get_conn().commit()
+
+
+# ---------- 封禁 / 白名单（持久化） ----------
+
+def ban_add(ip: str, minutes: int, reason: str) -> None:
+    """封禁 IP；已存在则累加次数并延长到更晚的时间。"""
+    until = int(time.time() + max(1, minutes) * 60)
+    with _lock:
+        conn = get_conn()
+        row = conn.execute("SELECT until_ts, hits FROM bans WHERE ip = ?", (ip,)).fetchone()
+        if row:
+            conn.execute("UPDATE bans SET until_ts = ?, reason = ?, hits = ? WHERE ip = ?",
+                         (max(until, row["until_ts"]), reason, row["hits"] + 1, ip))
+        else:
+            conn.execute("INSERT INTO bans (ip, until_ts, reason, hits, created_at) "
+                         "VALUES (?, ?, ?, 1, ?)", (ip, until, reason, now_iso()))
+        conn.commit()
+
+
+def ban_remove(ip: str) -> bool:
+    with _lock:
+        conn = get_conn()
+        cur = conn.execute("DELETE FROM bans WHERE ip = ?", (ip,))
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def bans_all(now_ts: float | None = None) -> list[dict]:
+    """当前生效的封禁（顺手清掉已过期的）。"""
+    now = int(now_ts if now_ts is not None else time.time())
+    with _lock:
+        conn = get_conn()
+        conn.execute("DELETE FROM bans WHERE until_ts <= ?", (now,))
+        conn.commit()
+        rows = conn.execute("SELECT * FROM bans ORDER BY until_ts DESC").fetchall()
+    return [dict(r) for r in rows]
+
+
+def ban_get(ip: str) -> dict | None:
+    row = get_conn().execute("SELECT * FROM bans WHERE ip = ?", (ip,)).fetchone()
+    return dict(row) if row else None
+
+
+def whitelist_all() -> list[dict]:
+    rows = get_conn().execute(
+        "SELECT * FROM ip_whitelist ORDER BY created_at DESC").fetchall()
+    return [dict(r) for r in rows]
+
+
+def whitelist_add(pattern: str, note: str = "") -> None:
+    with _lock:
+        conn = get_conn()
+        conn.execute(
+            "INSERT INTO ip_whitelist (pattern, note, created_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(pattern) DO UPDATE SET note = excluded.note",
+            (pattern, note or "", now_iso()))
+        conn.commit()
+
+
+def whitelist_remove(pattern: str) -> bool:
+    with _lock:
+        conn = get_conn()
+        cur = conn.execute("DELETE FROM ip_whitelist WHERE pattern = ?", (pattern,))
+        conn.commit()
+        return cur.rowcount > 0
+
+
+# ---------- 备份 / 恢复辅助 ----------
+
+def close_all() -> None:
+    """关闭所有已知连接（恢复备份前调用），下次 get_conn() 自动重连新库。"""
+    global _schema_ready
+    with _init_lock:
+        with _conns_lock:
+            for c in _conns:
+                try:
+                    c.close()
+                except Exception:
+                    pass
+            _conns.clear()
+        _local.conn = None
+        _schema_ready = False
+
+
+def snapshot_to(path: str) -> None:
+    """用 SQLite 在线备份 API 导出一致性快照（WAL 下直接拷文件可能撕页）。"""
+    with _lock:
+        src = get_conn()
+        dst = sqlite3.connect(path)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+
+
+def counts() -> dict:
+    conn = get_conn()
+    out = {}
+    for t in ("images", "users", "visits", "bans", "ip_whitelist", "ip_blacklist"):
+        try:
+            out[t] = conn.execute(f"SELECT COUNT(*) AS n FROM {t}").fetchone()["n"]
+        except Exception:
+            out[t] = 0
+    return out
+
+
+def blacklist_all() -> list[dict]:
+    rows = get_conn().execute(
+        "SELECT * FROM ip_blacklist ORDER BY created_at DESC").fetchall()
+    return [dict(r) for r in rows]
+
+
+def blacklist_add(pattern: str, note: str = "") -> None:
+    with _lock:
+        conn = get_conn()
+        conn.execute(
+            "INSERT INTO ip_blacklist (pattern, note, created_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(pattern) DO UPDATE SET note = excluded.note",
+            (pattern, note or "", now_iso()))
+        conn.commit()
+
+
+def blacklist_remove(pattern: str) -> bool:
+    with _lock:
+        conn = get_conn()
+        cur = conn.execute("DELETE FROM ip_blacklist WHERE pattern = ?", (pattern,))
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def restore_from(src_path: str) -> None:
+    """把 src_path 这个库整体写回当前库（不替换文件，Windows 下也不会被占用卡住）。"""
+    global _schema_ready
+    with _lock:
+        src = sqlite3.connect(src_path)
+        try:
+            src.backup(get_conn())      # 目标=活库，内容整体覆盖
+        finally:
+            src.close()
+    _schema_ready = False               # 让 get_conn() 重跑建表/补列（老备份平滑升级）
+    get_conn()

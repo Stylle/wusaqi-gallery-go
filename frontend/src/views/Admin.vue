@@ -4,8 +4,10 @@ import {
   getSettings, saveSettings, getBans, getPublicSettings, getSystem,
   listUsers, createUser, updateUser, deleteUser, fmtSize,
   scanLocal, compressLocal, getStats, testNotify,
+  banIp, unbanIp, addWhitelist, removeWhitelist, addBlacklist, removeBlacklist,
+  getBackupStats, downloadBackup, restoreBackup,
 } from '../api.js'
-import { store, isAdmin, refreshMe, ensureAuth } from '../auth.js'
+import { store, isAdmin, refreshMe, ensureAuth, clearToken } from '../auth.js'
 import { setSite } from '../site.js'
 import { t } from '../i18n.js'
 
@@ -62,9 +64,11 @@ const groups = [
       { k: 'auth_ban_minutes', label: '触发后封禁时长 (分钟)', type: 'number' },
     ] },
     { id: 'notify', label: '📣 通知', custom: 'notify' },
+    { id: 'bans', label: '🚫 封禁与名单', custom: 'bans' },
   ]},
   { title: '媒体维护', items: [
     { id: 'local', label: '📥 本地图库导入', custom: 'local' },
+    { id: 'backup', label: '💾 备份与恢复', custom: 'backup' },
   ]},
   { title: '开发者', items: [
     { id: 'apidoc', label: '📡 API 文档', custom: 'apidoc' },
@@ -86,6 +90,22 @@ function showToast(text, ok = true) {
 const toastText = computed(() => toast.value?.text || '')
 const toastOk = computed(() => toast.value?.ok !== false)
 const bans = ref([])
+const whitelist = ref([])
+const blacklist = ref([])
+const rulesMsg = ref('')
+const rulesBad = ref(false)
+const rulesBusy = ref(false)
+const banForm = ref({ ip: '', minutes: 60, reason: '' })
+const wlForm = ref({ pattern: '', note: '' })
+const blForm = ref({ pattern: '', note: '' })
+// 备份与恢复
+const bk = ref(null)
+const bkMsg = ref('')
+const bkBusy = ref(false)
+const restoreFile = ref(null)
+const restoreName = ref('')
+const restoreMsg = ref('')
+const restoreBusy = ref(false)
 const users = ref([])
 const uMsg = ref('')
 const form = ref(blankForm())
@@ -259,6 +279,7 @@ onMounted(async () => {
   }
   loadSystem()
   loadBans()
+  loadBackup()
   loadUsers()
   loadStats()
   previewLocal()
@@ -266,16 +287,156 @@ onMounted(async () => {
 })
 
 // 切换左侧菜单时清掉上一页残留的提示，否则旧的「失败：…」会一直挂在新面板上
-watch(active, () => {
+watch(active, (id) => {
   msg.value = ''
   notifyMsg.value = ''
   localMsg.value = ''
   compMsg.value = ''
   statsMsg.value = ''
+  rulesMsg.value = ''
+  if (id === 'bans') loadBans()
+  if (id === 'backup') loadBackup()
 })
 
 async function loadBans() {
-  try { bans.value = (await getBans(store.token)).bans } catch { }
+  try {
+    const d = await getBans(store.token)
+    bans.value = d.bans || []
+    whitelist.value = d.whitelist || []
+    blacklist.value = d.blacklist || []
+  } catch (e) { rulesMsg.value = errText(e) }
+}
+
+function rulesSay(text, ok = true) {
+  rulesBad.value = !ok
+  rulesMsg.value = text
+  showToast(text, ok)
+}
+
+// 剩余时间：1天2小时 / 3小时5分 / 12分
+function fmtRemain(sec) {
+  const s = Math.max(0, Number(sec) || 0)
+  if (s >= 86400) return `${Math.floor(s / 86400)}${t('天')}${Math.floor((s % 86400) / 3600)}${t('小时')}`
+  if (s >= 3600) return `${Math.floor(s / 3600)}${t('小时')}${Math.floor((s % 3600) / 60)}${t('分')}`
+  if (s >= 60) return `${Math.floor(s / 60)}${t('分')}`
+  return `${s}${t('秒')}`
+}
+
+async function doBan() {
+  const ip = (banForm.value.ip || '').trim()
+  if (!ip) return rulesSay(t('请填写要封禁的 IP'), false)
+  rulesBusy.value = true
+  try {
+    await banIp(store.token, ip, Number(banForm.value.minutes) || 0, banForm.value.reason)
+    bans.value = (await getBans(store.token)).bans || []
+    banForm.value = { ip: '', minutes: 60, reason: '' }
+    rulesSay(t('已封禁 ✓'))
+  } catch (e) { rulesSay(t('失败：') + errText(e), false) }
+  finally { rulesBusy.value = false }
+}
+
+async function doUnban(ip) {
+  rulesBusy.value = true
+  try {
+    await unbanIp(store.token, ip)
+    bans.value = (await getBans(store.token)).bans || []
+    rulesSay(t('已解除封禁 ✓'))
+  } catch (e) { rulesSay(t('失败：') + errText(e), false) }
+  finally { rulesBusy.value = false }
+}
+
+async function doAddBlack() {
+  const pattern = (blForm.value.pattern || '').trim()
+  if (!pattern) return rulesSay(t('请填写 IP 或网段'), false)
+  rulesBusy.value = true
+  try {
+    const d = await addBlacklist(store.token, pattern, blForm.value.note)
+    blacklist.value = d.blacklist || []
+    bans.value = (await getBans(store.token)).bans || []
+    blForm.value = { pattern: '', note: '' }
+    rulesSay(t('已加入黑名单 ✓'))
+  } catch (e) { rulesSay(t('失败：') + errText(e), false) }
+  finally { rulesBusy.value = false }
+}
+
+async function doDelBlack(pattern) {
+  rulesBusy.value = true
+  try {
+    await removeBlacklist(store.token, pattern)
+    blacklist.value = (await getBans(store.token)).blacklist || []
+    rulesSay(t('已移出黑名单 ✓'))
+  } catch (e) { rulesSay(t('失败：') + errText(e), false) }
+  finally { rulesBusy.value = false }
+}
+
+async function doAddWhite() {
+  const pattern = (wlForm.value.pattern || '').trim()
+  if (!pattern) return rulesSay(t('请填写 IP 或网段'), false)
+  rulesBusy.value = true
+  try {
+    const d = await addWhitelist(store.token, pattern, wlForm.value.note)
+    whitelist.value = d.whitelist || []
+    bans.value = (await getBans(store.token)).bans || []
+    wlForm.value = { pattern: '', note: '' }
+    rulesSay(t('已加入白名单 ✓'))
+  } catch (e) { rulesSay(t('失败：') + errText(e), false) }
+  finally { rulesBusy.value = false }
+}
+
+async function doDelWhite(pattern) {
+  rulesBusy.value = true
+  try {
+    await removeWhitelist(store.token, pattern)
+    whitelist.value = (await getBans(store.token)).whitelist || []
+    rulesSay(t('已移出白名单 ✓'))
+  } catch (e) { rulesSay(t('失败：') + errText(e), false) }
+  finally { rulesBusy.value = false }
+}
+
+// ---- 备份 / 恢复 ----
+async function loadBackup() {
+  try { bk.value = await getBackupStats(store.token) }
+  catch (e) { bkMsg.value = errText(e) }
+}
+
+async function doBackup() {
+  bkBusy.value = true
+  bkMsg.value = t('正在打包，图片多时需要等一会儿…')
+  try {
+    const r = await downloadBackup(store.token)
+    bkMsg.value = `${t('已下载')} ${r.name}（${fmtSize(r.bytes)}）`
+    showToast(t('备份已下载 ✓'))
+  } catch (e) {
+    bkMsg.value = t('失败：') + errText(e)
+    showToast(bkMsg.value, false)
+  } finally { bkBusy.value = false }
+}
+
+function onRestoreFile(ev) {
+  const f = ev.target.files && ev.target.files[0]
+  restoreFile.value = f || null
+  restoreName.value = f ? f.name : ''
+  restoreMsg.value = ''
+}
+
+async function doRestore() {
+  if (!restoreFile.value) return
+  if (!confirm(t('恢复会覆盖当前数据库与全部图片，且不可撤销。确定继续？'))) return
+  restoreBusy.value = true
+  restoreMsg.value = t('恢复中，请勿关闭页面…')
+  try {
+    const d = await restoreBackup(store.token, restoreFile.value)
+    restoreMsg.value = `${t('恢复完成 ✓')}（${d.restored?.images || 0} ${t('张图片')}）`
+    showToast(t('恢复完成，即将重新登录'))
+    setTimeout(() => {
+      clearToken()
+      location.hash = '#/login'
+      location.reload()
+    }, 1800)
+  } catch (e) {
+    restoreMsg.value = t('失败：') + errText(e)
+    showToast(restoreMsg.value, false)
+  } finally { restoreBusy.value = false }
 }
 
 async function loadUsers() {
@@ -1003,6 +1164,175 @@ curl -H "Authorization: Bearer $TOKEN" \
           <p class="hint muted">{{ t('删除用户时其图片会转交给管理员（不丢图）。') }}</p>
         </template>
 
+        <!-- 封禁与名单 -->
+        <template v-else-if="currentGroup()?.custom === 'bans'">
+          <p class="muted">
+            {{ t('优先级：白名单 > 黑名单 > 临时封禁。白名单不封禁也不限流；黑名单永久拒绝（命中即 403）；临时封禁到期自动解封。名单持久化保存，重启不清零。') }}
+          </p>
+
+          <h3>{{ t('临时封禁') }}</h3>
+          <div class="field-grid">
+            <div class="field">
+              <label>{{ t('IP 地址') }}</label>
+              <input v-model="banForm.ip" class="mono" placeholder="1.2.3.4" />
+            </div>
+            <div class="field">
+              <label>{{ t('时长（分钟，0 = 永久）') }}</label>
+              <input type="number" min="0" v-model.number="banForm.minutes" />
+            </div>
+            <div class="field span-2">
+              <label>{{ t('原因（可选）') }}</label>
+              <input v-model="banForm.reason" :placeholder="t('如：恶意爬图 / 爆破登录')" />
+            </div>
+          </div>
+          <div class="row">
+            <button :disabled="rulesBusy" @click="doBan">{{ t('封禁该 IP') }}</button>
+            <button class="ghost" :disabled="rulesBusy" @click="loadBans">{{ t('刷新') }}</button>
+            <span class="msg-line" :class="{ bad: rulesBad }">{{ rulesMsg }}</span>
+          </div>
+
+          <h3>{{ t('当前封禁') }} · {{ bans.length }}</h3>
+          <div class="table-scroll" v-if="bans.length">
+            <table class="user-table">
+              <thead>
+                <tr>
+                  <th>IP</th><th>{{ t('原因') }}</th><th>{{ t('解封时间') }}</th>
+                  <th>{{ t('剩余') }}</th><th>{{ t('操作') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="b in bans" :key="b.ip">
+                  <td class="mono">{{ b.ip }}</td>
+                  <td>{{ t(b.reason) }}</td>
+                  <td class="mono" style="font-size:12px">{{ b.until.replace('T', ' ').slice(0, 19) }}</td>
+                  <td>{{ fmtRemain(b.remaining) }}</td>
+                  <td>
+                    <button class="ghost sm" :disabled="rulesBusy" @click="doUnban(b.ip)">{{ t('解除') }}</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p v-else class="hint muted">{{ t('当前没有临时封禁的 IP。') }}</p>
+
+          <h3>{{ t('黑名单（永久拒绝）') }}</h3>
+          <p class="hint muted">{{ t('支持单个 IP 或网段（如 1.2.3.0/24、1.2.3.*）。命中即返回 403，直到手动移除。') }}</p>
+          <div class="field-grid">
+            <div class="field">
+              <label>{{ t('IP / 网段') }}</label>
+              <input v-model="blForm.pattern" class="mono" placeholder="1.2.3.0/24" />
+            </div>
+            <div class="field">
+              <label>{{ t('备注（可选）') }}</label>
+              <input v-model="blForm.note" :placeholder="t('如：扫描器 / 盗链')" />
+            </div>
+          </div>
+          <div class="row">
+            <button :disabled="rulesBusy" @click="doAddBlack">{{ t('加入黑名单') }}</button>
+          </div>
+          <div class="table-scroll" v-if="blacklist.length">
+            <table class="user-table">
+              <thead><tr><th>{{ t('规则') }}</th><th>{{ t('备注') }}</th><th>{{ t('添加时间') }}</th><th>{{ t('操作') }}</th></tr></thead>
+              <tbody>
+                <tr v-for="r in blacklist" :key="r.pattern">
+                  <td class="mono">{{ r.pattern }}</td>
+                  <td>{{ r.note || '—' }}</td>
+                  <td class="mono" style="font-size:11.5px">{{ (r.created_at || '').slice(0, 19).replace('T', ' ') }}</td>
+                  <td>
+                    <button class="ghost sm" :disabled="rulesBusy" @click="doDelBlack(r.pattern)">{{ t('移除') }}</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p v-else class="hint muted">{{ t('黑名单为空。') }}</p>
+
+          <h3>{{ t('白名单（不封禁 / 不限流）') }}</h3>
+          <p class="hint muted">{{ t('支持单个 IP 或网段。常用于自己的家庭宽带、监控探针、CDN 回源地址；加入后即使触发限流或爆破阈值也不会被封。') }}</p>
+          <div class="field-grid">
+            <div class="field">
+              <label>{{ t('IP / 网段') }}</label>
+              <input v-model="wlForm.pattern" class="mono" placeholder="192.168.1.0/24" />
+            </div>
+            <div class="field">
+              <label>{{ t('备注（可选）') }}</label>
+              <input v-model="wlForm.note" :placeholder="t('如：家里宽带 / 监控')" />
+            </div>
+          </div>
+          <div class="row">
+            <button :disabled="rulesBusy" @click="doAddWhite">{{ t('加入白名单') }}</button>
+          </div>
+          <div class="table-scroll" v-if="whitelist.length">
+            <table class="user-table">
+              <thead><tr><th>{{ t('规则') }}</th><th>{{ t('备注') }}</th><th>{{ t('添加时间') }}</th><th>{{ t('操作') }}</th></tr></thead>
+              <tbody>
+                <tr v-for="r in whitelist" :key="r.pattern">
+                  <td class="mono">{{ r.pattern }}</td>
+                  <td>{{ r.note || '—' }}</td>
+                  <td class="mono" style="font-size:11.5px">{{ (r.created_at || '').slice(0, 19).replace('T', ' ') }}</td>
+                  <td>
+                    <button class="ghost sm" :disabled="rulesBusy" @click="doDelWhite(r.pattern)">{{ t('移除') }}</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p v-else class="hint muted">{{ t('白名单为空。') }}</p>
+        </template>
+
+        <!-- 备份与恢复 -->
+        <template v-else-if="currentGroup()?.custom === 'backup'">
+          <p class="muted">
+            {{ t('备份包包含 SQLite 数据库（用户、设置、图片元数据）与 uploads / compressed / thumbs 三份图片文件，可直接搬到另一台机器恢复。') }}
+          </p>
+
+          <div class="stats-cards" v-if="bk">
+            <div class="stat-card">
+              <div class="stat-day">{{ t('数据库') }}</div>
+              <div class="stat-num">{{ fmtSize(bk.db_bytes) }}</div>
+              <div class="muted" style="font-size:12px">{{ bk.counts?.images || 0 }} {{ t('张图片记录') }}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-day">{{ t('原图') }}</div>
+              <div class="stat-num">{{ fmtSize(bk.dirs?.uploads?.bytes || 0) }}</div>
+              <div class="muted" style="font-size:12px">{{ bk.dirs?.uploads?.files || 0 }} {{ t('个文件') }}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-day">{{ t('压缩图') }}</div>
+              <div class="stat-num">{{ fmtSize(bk.dirs?.compressed?.bytes || 0) }}</div>
+              <div class="muted" style="font-size:12px">{{ bk.dirs?.compressed?.files || 0 }} {{ t('个文件') }}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-day">{{ t('缩略图') }}</div>
+              <div class="stat-num">{{ fmtSize(bk.dirs?.thumbs?.bytes || 0) }}</div>
+              <div class="muted" style="font-size:12px">{{ bk.dirs?.thumbs?.files || 0 }} {{ t('个文件') }}</div>
+            </div>
+          </div>
+
+          <div class="row">
+            <button :disabled="bkBusy" @click="doBackup">{{ bkBusy ? t('打包中…') : t('下载完整备份') }}</button>
+            <button class="ghost" :disabled="bkBusy" @click="loadBackup">{{ t('刷新') }}</button>
+            <span class="msg-line">{{ bkMsg }}</span>
+          </div>
+          <p class="hint muted">{{ t('数据量大的站点打包需要几十秒，期间可以继续浏览；下载完成后临时文件会自动删除。') }}</p>
+
+          <h3>{{ t('从备份恢复') }}</h3>
+          <p class="hint muted">
+            {{ t('上传 .zip 备份包即可整站还原（数据库 + 图片）。恢复会覆盖当前数据，建议先下载一份当前备份。恢复完成后需要重新登录。') }}
+          </p>
+          <div class="row">
+            <label class="file-pick">
+              <input type="file" accept=".zip,application/zip" @change="onRestoreFile" />
+              <span>{{ t('选择备份包') }}</span>
+            </label>
+            <span class="muted mono" style="font-size:12px">{{ restoreName }}</span>
+            <button class="danger-btn" :disabled="!restoreFile || restoreBusy" @click="doRestore">
+              {{ restoreBusy ? t('恢复中…') : t('开始恢复') }}
+            </button>
+            <span class="msg-line">{{ restoreMsg }}</span>
+          </div>
+        </template>
+
         <!-- 普通配置组 -->
         <template v-else>
           <div class="field-grid">
@@ -1029,15 +1359,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 
           <div class="row sticky-actions">
             <button :disabled="saveBusy" @click="save">{{ saveBusy ? t('保存中…') : t('保存全部设置') }}</button>
-            <button class="ghost" @click="loadBans">{{ t('刷新封禁列表') }}</button>
             <span class="msg-line" :class="{ bad: msgBad }">{{ msg }}</span>
-          </div>
-
-          <div v-if="bans.length" class="panel" style="margin-top:16px">
-            <h3>{{ t('当前封禁') }}</h3>
-            <div v-for="b in bans" :key="b.ip" class="mono muted">
-              {{ b.ip }} · {{ b.reason }} · {{ b.until }}
-            </div>
           </div>
         </template>
       </section>

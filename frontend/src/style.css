@@ -1084,3 +1084,22 @@ button.danger { color: var(--err); }
   .profile-grid { grid-template-columns: 1fr; }
   .admin-tree .item { font-size: 12px; padding: 6px 10px; }
 }
+
+/* ---------- 备份与恢复：文件选择（隐藏原生 input，做成按钮外观） ---------- */
+.file-pick {
+  display: inline-flex;
+  align-items: center;
+  padding: 9px 20px;
+  border-radius: 7px;
+  border: 0.5px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.file-pick:hover { border-color: var(--accent); color: var(--accent); }
+.file-pick input { display: none; }
+
+/* 名单表格里的说明列不要撑开 */
+.table-scroll .user-table td { word-break: break-word; }

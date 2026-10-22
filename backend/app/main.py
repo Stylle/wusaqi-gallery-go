@@ -19,13 +19,13 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
 from PIL import Image
 
-from . import auth, compress, config, db, notify, perf, util
+from . import auth, backup, compress, config, db, notify, perf, util
 
 
 @asynccontextmanager
@@ -62,10 +62,13 @@ app.mount("/files", StaticFiles(directory=config.UPLOADS_DIR), name="files")
 app.mount("/thumbs", StaticFiles(directory=config.THUMBS_DIR), name="thumbs")
 app.mount("/compressed", StaticFiles(directory=config.COMPRESSED_DIR), name="compressed")
 
-# ---------- 防御状态（内存态，重启清零） ----------
-bans: dict[str, list] = {}            # ip -> [until_ts, reason]
+# ---------- 防御状态 ----------
+# 封禁名单持久化在 SQLite（bans 表），重启不清零；白名单（ip_whitelist）优先于封禁与限流。
 _rate_windows: dict[str, list[float]] = defaultdict(list)  # ip -> [timestamps]
 _auth_fails: dict[str, list[float]] = defaultdict(list)    # ip -> [fail timestamps]
+_wl_cache: tuple[float, list] = (0.0, [])                  # 白名单缓存（10s）
+_bl_cache: tuple[float, list] = (0.0, [])                  # 黑名单缓存（10s）
+_wl_lock = threading.Lock()
 
 
 def client_ip(request: Request) -> str:
@@ -73,16 +76,105 @@ def client_ip(request: Request) -> str:
         request.client.host if request.client else "?")
 
 
+def _whitelist() -> list:
+    """解析后的白名单网段缓存，避免每请求都查库/建对象。"""
+    global _wl_cache
+    now = time.time()
+    if now - _wl_cache[0] < 10:
+        return _wl_cache[1]
+    with _wl_lock:
+        if now - _wl_cache[0] < 10:
+            return _wl_cache[1]
+        nets = []
+        try:
+            for row in db.whitelist_all():
+                pat = row["pattern"]
+                try:
+                    nets.append(ipaddress.ip_network(pat, strict=False))
+                except ValueError:
+                    try:
+                        nets.append(ipaddress.ip_network(f"{pat}/32", strict=False))
+                    except ValueError:
+                        pass
+        except Exception:
+            nets = []
+        _wl_cache = (now, nets)
+        return nets
+
+
+def is_whitelisted(ip: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return any(addr in n for n in _whitelist())
+
+
+def _netlist(rows: list) -> list:
+    nets = []
+    for row in rows:
+        pat = row["pattern"]
+        try:
+            nets.append(ipaddress.ip_network(pat, strict=False))
+        except ValueError:
+            try:
+                nets.append(ipaddress.ip_network(f"{pat}/32", strict=False))
+            except ValueError:
+                pass
+    return nets
+
+
+def _blacklist() -> list:
+    global _bl_cache
+    now = time.time()
+    if now - _bl_cache[0] < 10:
+        return _bl_cache[1]
+    with _wl_lock:
+        if now - _bl_cache[0] < 10:
+            return _bl_cache[1]
+        try:
+            nets = _netlist(db.blacklist_all())
+        except Exception:
+            nets = []
+        _bl_cache = (now, nets)
+        return nets
+
+
+def is_blacklisted(ip: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return any(addr in n for n in _blacklist())
+
+
 def is_banned(ip: str) -> tuple[bool, str]:
-    entry = bans.get(ip)
-    if entry and entry[0] > time.time():
-        return True, entry[1]
-    bans.pop(ip, None)
+    if is_whitelisted(ip):
+        return False, ""
+    try:
+        row = db.ban_get(ip)
+    except Exception:
+        return False, ""
+    if row and row["until_ts"] > time.time():
+        return True, row["reason"]
     return False, ""
 
 
+def ban_until_ts(ip: str) -> int:
+    try:
+        row = db.ban_get(ip)
+        return int(row["until_ts"]) if row else 0
+    except Exception:
+        return 0
+
+
 def ban_ip(ip: str, minutes: int, reason: str) -> None:
-    bans[ip] = [time.time() + minutes * 60, reason]
+    if is_whitelisted(ip):
+        return
+    db.ban_add(ip, minutes, reason)
+    # 白名单/封禁变化后让缓存失效，即时生效
+    global _wl_cache
+    _wl_cache = (0.0, [])
 
 
 def fire_webhook(event: str, message: str = "", **fields) -> None:
@@ -91,7 +183,9 @@ def fire_webhook(event: str, message: str = "", **fields) -> None:
 
 
 def note_fail(ip: str) -> None:
-    """登录失败计数，超阈值封禁（防爆破）。"""
+    """登录失败计数，超阈值封禁（防爆破）。白名单 IP 不计数。"""
+    if is_whitelisted(ip):
+        return
     now = time.time()
     fails = [t for t in _auth_fails[ip] if now - t < 600]
     fails.append(now)
@@ -109,14 +203,16 @@ def note_fail(ip: str) -> None:
 @app.middleware("http")
 async def rate_limit(request: Request, call_next):
     ip = client_ip(request)
+    if is_blacklisted(ip) and not is_whitelisted(ip):
+        return JSONResponse({"error": "blocked by administrator"}, status_code=403)
     banned, reason = is_banned(ip)
     if banned:
         return JSONResponse(
-            {"error": f"banned until {datetime.fromtimestamp(bans[ip][0], timezone.utc).isoformat()} ({reason})"},
+            {"error": f"banned until {datetime.fromtimestamp(ban_until_ts(ip), timezone.utc).isoformat()} ({reason})"},
             status_code=429)
     s = db.get_settings()
     limit = int(s.get("rate_limit", "0") or 0)
-    if request.url.path.startswith("/api/random") and limit > 0:
+    if request.url.path.startswith("/api/random") and limit > 0 and not is_whitelisted(ip):
         now = time.time()
         window = [t for t in _rate_windows[ip] if now - t < 60]
         if len(window) >= limit:
@@ -149,6 +245,8 @@ def _bearer(authorization: str) -> str:
 
 def current_user(request: Request, authorization: str = Header(default="")) -> dict | None:
     ip = client_ip(request)
+    if is_blacklisted(ip) and not is_whitelisted(ip):
+        raise HTTPException(403, "blocked by administrator")
     banned, reason = is_banned(ip)
     if banned:
         raise HTTPException(429, f"banned ({reason})")
@@ -934,13 +1032,195 @@ def reindex(admin: dict = Depends(require_admin)):
     return {"scanned": scanned, "added": added}
 
 
+def _norm_ip_pattern(raw: str) -> str:
+    """把白名单输入规范成 IP 或 CIDR：支持 1.2.3.4 / 1.2.3.0/24 / 1.2.3.*。"""
+    p = (raw or "").strip()
+    if not p:
+        raise HTTPException(400, "IP or CIDR is required")
+    if p.endswith(".*"):
+        p = p[:-1] + "0/24"
+    if "/" in p:
+        try:
+            return str(ipaddress.ip_network(p, strict=False))
+        except ValueError:
+            raise HTTPException(400, "invalid CIDR")
+    try:
+        return str(ipaddress.ip_address(p))
+    except ValueError:
+        raise HTTPException(400, "invalid IP address")
+
+
+def _ban_json(row: dict) -> dict:
+    now = time.time()
+    remaining = max(0, int(row["until_ts"] - now))
+    return {
+        "ip": row["ip"],
+        "reason": row["reason"],
+        "hits": row.get("hits", 1),
+        "until": datetime.fromtimestamp(row["until_ts"], timezone.utc).isoformat(),
+        "until_ts": row["until_ts"],
+        "remaining": remaining,
+        "created_at": row.get("created_at", ""),
+    }
+
+
 @app.get("/api/admin/bans")
 def list_bans(_: dict = Depends(require_admin)):
-    """当前封禁列表（后台可观察防御状态）。"""
-    now = time.time()
-    return {"bans": [{"ip": ip, "reason": r,
-                      "until": datetime.fromtimestamp(t, timezone.utc).isoformat()}
-                     for ip, (t, r) in bans.items() if t > now]}
+    """当前封禁列表 + 白名单规则。"""
+    rows = db.bans_all()
+    return {
+        "bans": [_ban_json(r) for r in rows],
+        "whitelist": db.whitelist_all(),
+        "blacklist": db.blacklist_all(),
+    }
+
+
+@app.post("/api/admin/bans")
+def add_ban(payload: dict, _: dict = Depends(require_admin)):
+    """手动封禁：{ip, minutes, reason}。minutes=0 表示永久（10 年）。"""
+    ip = _norm_ip_pattern(payload.get("ip", ""))
+    if "/" in ip:
+        raise HTTPException(400, "only single IP can be banned")
+    minutes = int(payload.get("minutes") or 0)
+    minutes = 10 * 365 * 24 * 60 if minutes <= 0 else minutes
+    reason = (payload.get("reason") or "manual ban").strip()[:120]
+    if is_whitelisted(ip):
+        raise HTTPException(400, "IP is in the whitelist, remove it first")
+    db.ban_add(ip, minutes, reason)
+    fire_webhook("manual_ban", ip=ip, minutes=minutes, reason=reason)
+    row = db.ban_get(ip)
+    return {"ok": True, "ban": _ban_json(row) if row else None}
+
+
+@app.delete("/api/admin/bans/{ip}")
+def delete_ban(ip: str, _: dict = Depends(require_admin)):
+    """手动解除封禁。"""
+    ok = db.ban_remove(ip)
+    if not ok:
+        raise HTTPException(404, "not banned")
+    fire_webhook("manual_unban", ip=ip)
+    return {"ok": True, "ip": ip}
+
+
+@app.post("/api/admin/whitelist")
+def add_whitelist(payload: dict, _: dict = Depends(require_admin)):
+    """新增白名单规则：{pattern, note}。命中白名单的 IP 不封禁、不限流。"""
+    pattern = _norm_ip_pattern(payload.get("pattern", ""))
+    note = (payload.get("note") or "").strip()[:120]
+    db.whitelist_add(pattern, note)
+    global _wl_cache, _bl_cache
+    _wl_cache = (0.0, [])            # 立即生效
+    _bl_cache = (0.0, [])
+    # 已在封禁里的 IP 加白后自动解封
+    db.ban_remove(pattern)
+    return {"ok": True, "whitelist": db.whitelist_all()}
+
+
+@app.delete("/api/admin/whitelist/{pattern:path}")
+def delete_whitelist(pattern: str, _: dict = Depends(require_admin)):
+    ok = db.whitelist_remove(pattern)
+    if not ok:
+        raise HTTPException(404, "not found")
+    global _wl_cache, _bl_cache
+    _wl_cache = (0.0, [])
+    _bl_cache = (0.0, [])
+    return {"ok": True, "pattern": pattern}
+
+
+@app.post("/api/admin/blacklist")
+def add_blacklist(payload: dict, _: dict = Depends(require_admin)):
+    """永久黑名单：{pattern, note}。命中即 403，直到手动移除。"""
+    pattern = _norm_ip_pattern(payload.get("pattern", ""))
+    note = (payload.get("note") or "").strip()[:120]
+    if is_whitelisted(pattern.split("/")[0]):
+        raise HTTPException(400, "this IP is whitelisted, remove it from the whitelist first")
+    db.blacklist_add(pattern, note)
+    db.ban_remove(pattern)           # 永久黑名单生效，临时封禁记录可清掉
+    global _bl_cache
+    _bl_cache = (0.0, [])
+    return {"ok": True, "blacklist": db.blacklist_all()}
+
+
+@app.delete("/api/admin/blacklist/{pattern:path}")
+def delete_blacklist(pattern: str, _: dict = Depends(require_admin)):
+    ok = db.blacklist_remove(pattern)
+    if not ok:
+        raise HTTPException(404, "not found")
+    global _bl_cache
+    _bl_cache = (0.0, [])
+    return {"ok": True, "pattern": pattern}
+
+
+# ---------- 备份 / 恢复 ----------
+
+@app.get("/api/admin/backup/stats")
+def backup_stats(_: dict = Depends(require_admin)):
+    """备份页用：数据库与图片目录的体积、条数。"""
+    return backup.stats()
+
+
+@app.get("/api/admin/backup")
+def download_backup(_: dict = Depends(require_admin)):
+    """整站备份（数据库 + 原图 + 压缩图 + 缩略图）→ zip 下载。"""
+    tmp = os.path.join(config.DATA_DIR, "backup-tmp")
+    os.makedirs(tmp, exist_ok=True)
+    name = f"lolis-backup-{time.strftime('%Y%m%d-%H%M%S')}.zip"
+    path = os.path.join(tmp, name)
+    manifest = backup.create_zip(path)
+
+    def stream():
+        try:
+            with open(path, "rb") as f:
+                while True:
+                    chunk = f.read(1024 * 512)
+                    if not chunk:
+                        break
+                    yield chunk
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+    size = manifest.get("bytes", os.path.getsize(path))
+    return StreamingResponse(
+        stream(), media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{name}"',
+            "Content-Length": str(size),
+            "X-Backup-Images": str(manifest.get("counts", {}).get("images", 0)),
+        })
+
+
+@app.post("/api/admin/restore")
+async def restore_backup(file: UploadFile = File(...), _: dict = Depends(require_admin)):
+    """上传备份包恢复（覆盖数据库与图片）。恢复后所有会话失效，需要重新登录。"""
+    if not (file.filename or "").lower().endswith(".zip"):
+        raise HTTPException(400, "backup must be a .zip file")
+    tmpdir = os.path.join(config.DATA_DIR, "restore-tmp")
+    os.makedirs(tmpdir, exist_ok=True)
+    tmp = os.path.join(tmpdir, f"upload-{secrets.token_hex(4)}.zip")
+    size = 0
+    try:
+        with open(tmp, "wb") as out:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > 20 * 1024 ** 3:
+                    raise HTTPException(413, "backup larger than 20GB")
+                out.write(chunk)
+        summary = backup.restore_zip(tmp)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+    fire_webhook("restore", images=summary.get("images", 0))
+    return {"ok": True, "restored": summary, "relogin": True}
 
 
 # ---------- 访问统计 ----------

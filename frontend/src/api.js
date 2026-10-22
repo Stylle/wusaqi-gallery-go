@@ -131,6 +131,80 @@ export const compressLocal = (token, dryRun = true, limit = 5) =>
 export const getBans = (token) =>
   fetch('/api/admin/bans', { headers: auth(token) }).then(json)
 
+// 封禁 / 白名单 / 黑名单
+export const banIp = (token, ip, minutes, reason) =>
+  fetch('/api/admin/bans', {
+    method: 'POST',
+    headers: { ...auth(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ip, minutes, reason }),
+  }).then(json)
+
+export const unbanIp = (token, ip) =>
+  fetch(`/api/admin/bans/${encodeURIComponent(ip)}`, {
+    method: 'DELETE', headers: auth(token),
+  }).then(json)
+
+export const addWhitelist = (token, pattern, note) =>
+  fetch('/api/admin/whitelist', {
+    method: 'POST',
+    headers: { ...auth(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pattern, note }),
+  }).then(json)
+
+export const removeWhitelist = (token, pattern) =>
+  fetch(`/api/admin/whitelist/${encodeURIComponent(pattern)}`, {
+    method: 'DELETE', headers: auth(token),
+  }).then(json)
+
+export const addBlacklist = (token, pattern, note) =>
+  fetch('/api/admin/blacklist', {
+    method: 'POST',
+    headers: { ...auth(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pattern, note }),
+  }).then(json)
+
+export const removeBlacklist = (token, pattern) =>
+  fetch(`/api/admin/blacklist/${encodeURIComponent(pattern)}`, {
+    method: 'DELETE', headers: auth(token),
+  }).then(json)
+
+// ---------- 备份 / 恢复 ----------
+export const getBackupStats = (token) =>
+  fetch('/api/admin/backup/stats', { headers: auth(token) }).then(json)
+
+// 下载备份：必须带 Authorization，所以走 fetch → blob → 本地保存
+export async function downloadBackup(token) {
+  const res = await fetch('/api/admin/backup', { headers: auth(token) })
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}))
+    const err = new Error(t(d.detail || d.error || res.statusText))
+    err.status = res.status
+    throw err
+  }
+  const blob = await res.blob()
+  const cd = res.headers.get('Content-Disposition') || ''
+  const m = cd.match(/filename="([^"]+)"/)
+  const name = m ? m[1] : `lolis-backup-${Date.now()}.zip`
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 10000)
+  return { name, bytes: blob.size }
+}
+
+export async function restoreBackup(token, file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  const res = await fetch('/api/admin/restore', {
+    method: 'POST', headers: auth(token), body: fd,
+  })
+  return json(res, { noUnauth: true })
+}
+
 // 访问统计（最近 3 天 PV/UV、Top IP 与归属地、热门接口）
 export const getStats = (token) =>
   fetch('/api/admin/stats', { headers: auth(token) }).then(json)
