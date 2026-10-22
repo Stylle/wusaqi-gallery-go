@@ -102,6 +102,8 @@ DEFAULT_SETTINGS = {
     "site_footer": "Powered by lolis-gallery",
     "share_base_url": "",     # 对外分享基址，空 = 用当前访问 URL
     "upload_default_tags": "",  # 上传页默认选中的标签（逗号分隔）
+    # 外观：配色风格（gradient = 炫彩渐变 / solid = 纯色单色）
+    "theme_style": "solid",
     # 压缩方案（方案 B：按机器能力自动选档，可手动覆盖）
     "comp_profile": "auto",   # auto | tiny | small | normal | custom
     "comp_format": "webp",    # webp | jpeg | png（各档位共用）

@@ -11,6 +11,7 @@ export const site = reactive({
   upload_default_tags: '',
   upload_max_mb: '',     // 全局单图上限（MB），后端算好下发
   upload_formats: '',    // 支持的扩展名，逗号分隔
+  theme_style: 'solid',  // 'gradient' = 炫彩渐变 / 'solid' = 纯色
   token_login: '0',      // '1' = 允许用管理员 Token 直登（由后端环境变量决定）
 })
 
@@ -20,6 +21,10 @@ export function setSite(obj) {
 }
 
 export function applySite() {
+  // 配色风格：纯色（默认，素净）/ 炫彩（渐变彩色）
+  document.documentElement.dataset.style =
+    (site.theme_style || 'solid') === 'gradient' ? 'gradient' : 'solid'
+
   // 标题完全由后台「站点标题」配置决定（不再附加任何后缀）
   document.title = site.site_title
   const link = document.querySelector("link[rel='icon']") || document.createElement('link')

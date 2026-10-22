@@ -314,7 +314,8 @@ def save_one(data: bytes, filename: str, user: dict, tag: str = "") -> dict:
 
 # ---------- 公开接口 ----------
 PUBLIC_SETTING_KEYS = ("site_title", "site_icon", "site_tags", "site_footer",
-                       "random_public", "share_base_url", "upload_default_tags")
+                       "random_public", "share_base_url", "upload_default_tags",
+                       "theme_style")
 
 
 @app.get("/api/health")
@@ -705,6 +706,9 @@ def put_settings(patch: dict, _: dict = Depends(require_admin)):
                 clean[k] = v
         elif k == "notify_body_type":
             if v in ("json", "text"):
+                clean[k] = v
+        elif k == "theme_style":
+            if v in ("gradient", "solid"):
                 clean[k] = v
         elif k == "notify_daily_time":
             t = str(v).strip()

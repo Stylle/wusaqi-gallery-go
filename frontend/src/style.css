@@ -17,7 +17,7 @@
   --ok: #0d9488;
   --err: #f85149;
   --shadow: 0 8px 30px rgba(26, 24, 34, 0.08);
-  --radius: 14px;
+  --radius: 10px;
   color-scheme: light;
 }
 [data-theme='dark'] {
@@ -38,6 +38,29 @@
   --err: #f85149;
   --shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
   color-scheme: dark;
+}
+
+/* ============ 配色风格：纯色（素净单色，默认） ============ */
+/* 与站点 logo 的靛紫同族：#5B57C7 亮色 / #7C78E6 暗色；背景去掉粉调改为冷白 */
+:root[data-style='solid'] {
+  --grad-accent: linear-gradient(90deg, #5b57c7, #5b57c7);
+  --grad-bg: linear-gradient(135deg, #fbfbfe, #f4f5fa 48%, #f7f8fc);
+  --bg: #fbfbfe;
+  --accent: #5b57c7;
+  --accent-2: #4a6fd4;
+  --accent-soft: rgba(91, 87, 199, 0.1);
+}
+:root[data-theme='dark'][data-style='solid'] {
+  --grad-accent: linear-gradient(90deg, #7c78e6, #7c78e6);
+  --grad-bg: linear-gradient(135deg, #14161f, #1a1b26 48%, #161c26);
+  --bg: #0d1017;
+  --accent: #8c88ef;
+  --accent-2: #86a8ff;
+  --accent-soft: rgba(140, 136, 239, 0.16);
+}
+/* 纯色模式下按钮/选中项加一点层次，避免大块纯色发闷 */
+:root[data-style='solid'] button:not(.ghost) {
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.16), 0 1px 2px rgba(26, 24, 34, 0.12);
 }
 
 * { box-sizing: border-box; }
@@ -62,8 +85,8 @@ button {
   background: var(--grad-accent);
   color: #fff;
   border: none;
-  border-radius: 10px;
-  padding: 8px 18px;
+  border-radius: 7px;
+  padding: 9px 22px;
   cursor: pointer;
   transition: transform 0.15s, filter 0.15s, box-shadow 0.15s;
 }
@@ -79,7 +102,7 @@ button.ghost {
 input, select {
   font: inherit;
   border: 0.5px solid var(--border);
-  border-radius: 10px;
+  border-radius: 7px;
   padding: 8px 12px;
   background: var(--surface-solid);
   color: var(--text);
@@ -123,7 +146,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .topbar .logo .logo-img {
   width: 24px;
   height: 24px;
-  border-radius: 6px;
+  border-radius: 5px;
   flex: none;
 }
 .topbar .logo span { background: inherit; -webkit-background-clip: text; background-clip: text; }
@@ -278,7 +301,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
   z-index: 60;
   background: var(--surface-solid);
   border: 0.5px solid var(--border);
-  border-radius: 12px;
+  border-radius: 9px;
   padding: 6px;
   min-width: 220px;
   box-shadow: var(--shadow);
@@ -291,7 +314,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
   background: none;
   color: var(--text);
   padding: 8px 12px;
-  border-radius: 8px;
+  border-radius: 6px;
   box-shadow: none;
 }
 .ctxmenu button:hover:not(:disabled) { background: var(--accent-soft); transform: none; }
@@ -301,7 +324,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .randbox img {
   max-width: min(520px, 92vw);
   max-height: 70vh;
-  border-radius: 16px;
+  border-radius: 11px;
   border: 0.5px solid var(--border);
   background: var(--surface);
   cursor: pointer;
@@ -326,8 +349,8 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .panel {
   border: 0.5px solid var(--border);
   border-radius: var(--radius);
-  padding: 18px 20px;
-  margin-top: 22px;
+  padding: 20px 22px;
+  margin-top: 26px;
   background: var(--surface);
   backdrop-filter: blur(8px);
 }
@@ -353,10 +376,10 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
   align-items: center;
   padding: 10px 14px;
   border: 0.5px solid var(--border);
-  border-radius: 12px;
+  border-radius: 9px;
   background: var(--surface);
 }
-.prog-item img { width: 46px; height: 46px; object-fit: cover; border-radius: 8px; }
+.prog-item img { width: 46px; height: 46px; object-fit: cover; border-radius: 6px; }
 .prog-item .info { flex: 1; min-width: 0; }
 .bar { height: 6px; border-radius: 3px; background: var(--accent-soft); overflow: hidden; margin-top: 5px; }
 .bar > div {
@@ -370,22 +393,24 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .tag-err { color: var(--err); }
 
 /* ============ 树形后台（komari 风格） ============ */
-.admin-layout { display: flex; gap: 20px; align-items: flex-start; }
+.admin-layout { display: flex; gap: 26px; align-items: flex-start; }
 .admin-tree {
-  min-width: 190px;
+  min-width: 212px;
   border: 0.5px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
-  padding: 10px;
+  padding: 14px 12px;
   position: sticky;
-  top: 80px;
+  top: 88px;
 }
-.admin-tree .group { margin: 4px 0; }
+.admin-tree .group { margin: 10px 0; }
+.admin-tree .group:first-child { margin-top: 2px; }
+.admin-tree .group:last-child { margin-bottom: 2px; }
 .admin-tree .group-title {
   font-size: 11.5px;
   color: var(--muted);
-  padding: 6px 12px 2px;
-  letter-spacing: 0.05em;
+  padding: 8px 14px 6px;
+  letter-spacing: 0.08em;
 }
 .admin-tree .item {
   display: block;
@@ -393,22 +418,30 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
   text-align: left;
   background: none;
   color: var(--text);
-  padding: 8px 12px;
-  border-radius: 9px;
+  padding: 11px 14px;
+  margin: 3px 0;
+  border-radius: 8px;
   box-shadow: none;
-  font-size: 13.5px;
+  font-size: 14px;
 }
 .admin-tree .item:hover { background: var(--surface-hover); transform: none; box-shadow: none; }
 .admin-tree .item.on { background: var(--grad-accent); color: #fff; }
+.admin-content .row {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 16px 0;
+}
 .admin-content {
   flex: 1;
   border: 0.5px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
-  padding: 22px 24px;
+  padding: 26px 30px 30px;
   min-width: 0;
 }
-.field { display: flex; flex-direction: column; gap: 5px; margin: 14px 0; }
+.field { display: flex; flex-direction: column; gap: 6px; margin: 18px 0; }
 .field label { font-size: 13px; color: var(--muted); }
 .field .hint { font-size: 12px; color: var(--muted); }
 
@@ -421,7 +454,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
   background: var(--surface-solid);
   color: var(--text);
   border: 0.5px solid var(--border);
-  border-radius: 12px;
+  border-radius: 9px;
   padding: 10px 20px;
   z-index: 70;
   box-shadow: var(--shadow);
@@ -431,7 +464,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 code {
   background: var(--accent-soft);
   padding: 2px 7px;
-  border-radius: 6px;
+  border-radius: 5px;
   font-family: ui-monospace, Consolas, monospace;
   font-size: 12.5px;
 }
@@ -439,7 +472,7 @@ pre {
   background: var(--surface);
   border: 0.5px solid var(--border);
   padding: 14px 16px;
-  border-radius: 12px;
+  border-radius: 9px;
   overflow-x: auto;
   font-size: 12.5px;
 }
@@ -523,14 +556,14 @@ h2.page-title { font-weight: 500; margin: 4px 0 10px; }
   min-width: 240px; z-index: 40;
   background: var(--surface-solid);
   border: 0.5px solid var(--border);
-  border-radius: 14px; padding: 6px;
+  border-radius: 10px; padding: 6px;
   box-shadow: var(--shadow);
   animation: pop 0.15s;
 }
 .user-menu button {
   display: block; width: 100%; text-align: left;
   background: none; color: var(--text);
-  padding: 9px 12px; border-radius: 9px;
+  padding: 9px 12px; border-radius: 7px;
   font-size: 13.5px; box-shadow: none;
 }
 .user-menu button:hover { background: var(--accent-soft); transform: none; box-shadow: none; }
@@ -546,7 +579,7 @@ h2.page-title { font-weight: 500; margin: 4px 0 10px; }
   width: 100%; max-width: 380px;
   background: var(--surface);
   border: 0.5px solid var(--border);
-  border-radius: 18px;
+  border-radius: 13px;
   padding: 26px 26px 18px;
   backdrop-filter: blur(12px);
   box-shadow: var(--shadow);
@@ -588,7 +621,7 @@ h2.page-title { font-weight: 500; margin: 4px 0 10px; }
 }
 .profile-card {
   display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
-  padding: 12px 14px; border-radius: 12px; text-align: left;
+  padding: 12px 14px; border-radius: 9px; text-align: left;
   border: 1px solid var(--border); background: var(--surface-solid);
   color: var(--text); box-shadow: none; font-weight: 400; white-space: normal;
 }
@@ -610,12 +643,12 @@ h2.page-title { font-weight: 500; margin: 4px 0 10px; }
 .user-table { width: 100%; border-collapse: collapse; margin-top: 18px; font-size: 13px; }
 .user-table th {
   text-align: left; font-weight: 500; color: var(--muted);
-  font-size: 12px; padding: 8px 10px;
+  font-size: 12px; padding: 10px;
   border-bottom: 0.5px solid var(--border);
 }
-.user-table td { padding: 10px; border-bottom: 0.5px solid var(--border); vertical-align: top; }
+.user-table td { padding: 13px 10px; border-bottom: 0.5px solid var(--border); vertical-align: top; }
 .user-table tr.off { opacity: 0.5; }
-button.sm { padding: 4px 10px; font-size: 12px; border-radius: 8px; }
+button.sm { padding: 4px 10px; font-size: 12px; border-radius: 6px; }
 button.danger { color: var(--err); }
 .danger-btn { background: linear-gradient(90deg, #f0736b, #d93a3a); }
 
@@ -623,7 +656,7 @@ button.danger { color: var(--err); }
 .modal {
   background: var(--surface-solid);
   border: 0.5px solid var(--border);
-  border-radius: 16px;
+  border-radius: 11px;
   padding: 22px 24px;
   width: min(420px, 92vw);
   box-shadow: var(--shadow);
@@ -651,7 +684,7 @@ button.danger { color: var(--err); }
   width: 38px;
   height: 38px;
   padding: 0;
-  border-radius: 10px;
+  border-radius: 7px;
   background: var(--surface);
   color: var(--text);
   border: 0.5px solid var(--border);
@@ -702,7 +735,7 @@ button.danger { color: var(--err); }
     max-height: calc(100vh - 58px);
     overflow-y: auto;
   }
-  .topbar.open nav a { padding: 11px 14px; border-radius: 10px; font-size: 15px; }
+  .topbar.open nav a { padding: 11px 14px; border-radius: 7px; font-size: 15px; }
   .nav-mobile {
     display: block;
     margin-top: 8px;
@@ -729,7 +762,7 @@ button.danger { color: var(--err); }
   .masonry.size-s { column-width: 100px; }
   .masonry.size-m { column-width: 148px; }
   .masonry.size-l { column-width: 260px; }
-  .masonry .cell { margin-bottom: 8px; border-radius: 10px; }
+  .masonry .cell { margin-bottom: 8px; border-radius: 7px; }
   .masonry .cell:hover { transform: none; box-shadow: none; }
   .pager { margin-top: 18px; gap: 8px; }
   .pager button { padding: 8px 14px; }
@@ -750,7 +783,7 @@ button.danger { color: var(--err); }
   .ctxmenu button { padding: 11px 12px; }
 
   /* ---------- 后台：左树变顶部横向滚动条 ---------- */
-  .admin-layout { flex-direction: column; gap: 10px; }
+  .admin-layout { flex-direction: column; gap: 14px; }
   .admin-tree {
     position: static;
     width: 100%;
@@ -777,7 +810,7 @@ button.danger { color: var(--err); }
 
   /* ---------- 登录与表单 ---------- */
   .login-wrap { padding: 18px 0 36px; }
-  .login-card { padding: 20px 18px 14px; border-radius: 16px; }
+  .login-card { padding: 20px 18px 14px; border-radius: 11px; }
   .login-foot { flex-direction: column; align-items: center; gap: 4px; }
   .field input, .field select { width: 100%; }
   /* iOS：字号 <16px 会在聚焦时自动放大页面 */
@@ -820,7 +853,7 @@ button.danger { color: var(--err); }
 }
 .stat-card {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 9px;
   padding: 12px 18px;
   min-width: 130px;
   background: var(--surface);
@@ -842,7 +875,7 @@ button.danger { color: var(--err); }
 .user-form textarea {
   width: 100%;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 6px;
   padding: 8px 10px;
   background: var(--bg);
   color: var(--text);
@@ -857,7 +890,7 @@ button.danger { color: var(--err); }
   z-index: 300;
   max-width: min(420px, calc(100vw - 40px));
   padding: 11px 16px;
-  border-radius: 10px;
+  border-radius: 7px;
   font-size: 13px;
   line-height: 1.5;
   color: #fff;
@@ -877,7 +910,7 @@ button.danger { color: var(--err); }
   gap: 12px;
   align-items: center;
   padding: 10px 16px;
-  border-radius: 10px;
+  border-radius: 7px;
   font-size: 13px;
   color: #fff;
   background: #c0392b;
@@ -894,10 +927,10 @@ button.danger { color: var(--err); }
 /* ============ 后台：字段网格与通知面板（v4.4） ============ */
 .field-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 4px 16px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 6px 24px;
 }
-.field-grid .field { margin: 8px 0; }
+.field-grid .field { margin: 12px 0; }
 .field-grid .span-2 { grid-column: 1 / -1; }
 .user-form .span-2 { grid-column: 1 / -1; }
 
@@ -929,7 +962,7 @@ button.danger { color: var(--err); }
   flex-direction: column;
   gap: 10px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 9px;
   background: var(--bg);
   padding: 12px 14px;
   transition: border-color .15s, background .15s;
@@ -966,8 +999,8 @@ button.danger { color: var(--err); }
 .msg-line.bad { color: var(--err); }
 
 .row.sticky-actions {
-  margin-top: 20px;
-  padding-top: 14px;
+  margin-top: 26px;
+  padding-top: 18px;
   border-top: 0.5px solid var(--border);
 }
 
@@ -994,14 +1027,14 @@ button.danger { color: var(--err); }
     scrollbar-width: thin;
     padding: 6px;
     gap: 4px;
-    border-radius: 12px;
+    border-radius: 9px;
   }
-  .admin-tree .group { gap: 4px; }
+  .admin-tree .group { gap: 6px; }
   .admin-tree .group + .group {
     border-left: 0.5px solid var(--border);
     padding-left: 6px;
   }
-  .admin-tree .item { padding: 6px 11px; font-size: 12.5px; }
+  .admin-tree .item { padding: 8px 13px; font-size: 13px; margin: 0; }
 
   /* 表格横向滚动时右侧淡出，提示还有列 */
   .table-scroll { position: relative; }
@@ -1025,7 +1058,8 @@ button.danger { color: var(--err); }
     padding: 10px 0 calc(10px + env(safe-area-inset-bottom));
     background: var(--surface-solid);
   }
-  .row.sticky-actions > button { flex: 1 0 auto; min-height: 42px; }
+  .row.sticky-actions > button { flex: 1 0 auto; min-height: 44px; }
+  .admin-content .row { gap: 10px; }
   .row.sticky-actions .msg-line { flex: 1 1 100%; }
 
   /* 统计卡片：两列 */

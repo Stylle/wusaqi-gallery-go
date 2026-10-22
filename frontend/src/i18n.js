@@ -437,7 +437,10 @@ const EN = {
   '每周一发送，近 7 天汇总': 'Sent every Monday, last 7 days',
   '每月月报': 'Monthly report',
   '每月 1 号发送，近 30 天汇总': 'Sent on the 1st, last 30 days',
-  '汇报时间使用服务器时区，格式 HH:MM。': 'Report time uses the server timezone (HH:MM).',
+  '汇报时间使用服务器时区，格式 HH:MM。': 'Report time uses the server timezone (HH:MM).',  '配色风格': 'Color style',
+  '纯色': 'Solid',
+  '炫彩': 'Vivid',
+  '纯色 = 单一主色，素净清爽；炫彩 = 渐变彩色，更活泼': 'Solid = one flat accent color, calm and clean; Vivid = gradient colors, more playful',
 }
 
 // 带变量的后端消息（正则 + 取值函数）

@@ -22,6 +22,9 @@ const groups = [
       { k: 'site_icon', label: '站点图标', hint: '填图片 URL 或单个 emoji（如 🌶️）；留空使用默认 logo' },
       { k: 'site_tags', label: '标签池', hint: '逗号分隔，作为顶部筛选项与上传可选项' },
       { k: 'site_footer', label: '底部文字', hint: '页脚展示，可留空隐藏' },
+      { k: 'theme_style', label: '配色风格', type: 'select',
+        options: [{ v: 'solid', label: '纯色' }, { v: 'gradient', label: '炫彩' }],
+        hint: '纯色 = 单一主色，素净清爽；炫彩 = 渐变彩色，更活泼' },
     ] },
     { id: 'share', label: '🔗 分享与上传', fields: [
       { k: 'share_base_url', label: '分享基址', hint: '复制链接用的域名，如 https://img.example.com；留空 = 用当前访问地址' },
@@ -279,6 +282,12 @@ async function loadUsers() {
   try { users.value = (await listUsers(store.token)).users } catch (e) { uMsg.value = errText(e) }
 }
 
+// 配色风格即时预览（保存后才会持久化到全站）
+watch(() => s.value?.theme_style, (v) => {
+  if (!v) return
+  document.documentElement.dataset.style = v === 'gradient' ? 'gradient' : 'solid'
+})
+
 async function save() {
   if (saveBusy.value) return
   if (!store.token) { msg.value = t('登录已失效，请重新登录'); showToast(msg.value, false); return }
@@ -289,7 +298,10 @@ async function save() {
     s.value = await saveSettings(store.token, s.value)
     setSite(await getPublicSettings())
     await loadSystem()
-    msg.value = t('已保存 ✓（压缩方案对新上传生效）')
+    // 压缩参数类才有「对新上传生效」的说法，其余面板只说已保存
+    msg.value = ['compress', 'limits'].includes(active.value)
+      ? t('已保存 ✓（压缩方案对新上传生效）')
+      : t('设置已保存 ✓')
     showToast(t('设置已保存 ✓'))
   } catch (e) {
     msgBad.value = true
@@ -998,7 +1010,7 @@ curl -H "Authorization: Bearer $TOKEN" \
               <div class="field" v-if="f.type !== 'switch'" :class="{ 'span-2': f.type !== 'number' }">
                 <label>{{ t(f.label) }}</label>
                 <select v-if="f.type === 'select'" v-model="s[f.k]">
-                  <option v-for="o in f.options" :key="o" :value="o">{{ o }}</option>
+                  <option v-for="o in f.options" :key="o.v || o" :value="o.v || o">{{ t(o.label || o) }}</option>
                 </select>
                 <input v-else-if="f.type === 'number'" type="number" v-model.number="s[f.k]" />
                 <input v-else v-model="s[f.k]" />
