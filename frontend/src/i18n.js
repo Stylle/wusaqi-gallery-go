@@ -427,7 +427,17 @@ const EN = {
   '不支持的扩展名': 'Unsupported extension',
   '无法解析为图片': 'Cannot decode as an image',
   '本月': 'This month',
-  '今日上传达上限，请明天再试': 'Daily upload limit reached, try again tomorrow',
+  '今日上传达上限，请明天再试': 'Daily upload limit reached, try again tomorrow',  '连接': 'Connection',
+  '事件订阅': 'Events',
+  '有人用管理员账号登录时推送一条消息': 'Pushed when an administrator signs in',
+  '每日汇报': 'Daily report',
+  '今日 PV / UV / 上传数 / 图库总量': 'Today PV / UV / uploads / library total',
+  '汇报时间': 'Report time',
+  '每周周报': 'Weekly report',
+  '每周一发送，近 7 天汇总': 'Sent every Monday, last 7 days',
+  '每月月报': 'Monthly report',
+  '每月 1 号发送，近 30 天汇总': 'Sent on the 1st, last 30 days',
+  '汇报时间使用服务器时区，格式 HH:MM。': 'Report time uses the server timezone (HH:MM).',
 }
 
 // 带变量的后端消息（正则 + 取值函数）

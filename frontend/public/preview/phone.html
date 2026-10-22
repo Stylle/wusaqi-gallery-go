@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>手机端预览 · 椒盐画廊</title>
+<style>
+  :root {
+    --bg: #101317; --panel: #1a1e24; --border: #2c323b;
+    --text: #e8eaee; --muted: #8b93a1; --accent: #7c6cf0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font: 14px/1.5 "Segoe UI", "Microsoft YaHei", sans-serif;
+    display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+    padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--panel);
+    position: sticky; top: 0; z-index: 10;
+  }
+  header h1 { font-size: 15px; margin: 0 12px 0 0; font-weight: 600; }
+  .grp { display: flex; align-items: center; gap: 6px; }
+  .grp > span { font-size: 12px; color: var(--muted); }
+  select, button, input {
+    background: #22272f; color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 10px; font-size: 13px; cursor: pointer;
+  }
+  select:hover, button:hover { border-color: var(--accent); }
+  button.on { border-color: var(--accent); color: #fff; background: #2c2a4a; }
+  #stage {
+    flex: 1; display: flex; align-items: flex-start; justify-content: center;
+    padding: 26px 16px 40px; overflow: auto; background:
+      radial-gradient(1200px 500px at 50% -100px, rgba(124,108,240,.12), transparent), var(--bg);
+  }
+  .device {
+    background: #05070a; border-radius: 34px; padding: 10px;
+    box-shadow: 0 24px 60px rgba(0,0,0,.55), inset 0 0 0 2px #262b33;
+    position: relative; flex: 0 0 auto;
+  }
+  .device::before {
+    content: ''; position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    width: 86px; height: 22px; border-radius: 12px; background: #05070a;
+    border: 1px solid #262b33; z-index: 3;
+  }
+  .screen { border-radius: 24px; overflow: hidden; background: #fff; position: relative; }
+  .screen iframe { border: 0; display: block; width: 100%; height: 100%; background: #fff; }
+  .notch-mask {
+    position: absolute; top: 0; left: 0; right: 0; height: 44px; z-index: 2; pointer-events: none;
+  }
+  footer { padding: 8px 16px 16px; text-align: center; color: var(--muted); font-size: 12px; }
+  footer code { background: #22272f; padding: 1px 6px; border-radius: 6px; }
+  .tip { font-size: 12.5px; color: var(--muted); margin-left: auto; }
+  .tip b { color: var(--text); }
+</style>
+</head>
+<body>
+<header>
+  <h1>📱 手机端预览</h1>
+  <div class="grp"><span>设备</span>
+    <select id="device">
+      <option value="375x667">iPhone SE · 375×667</option>
+      <option value="390x844" selected>iPhone 14 · 390×844</option>
+      <option value="430x932">iPhone 14 Pro Max · 430×932</option>
+      <option value="360x800">Android 小屏 · 360×800</option>
+      <option value="412x915">Android 大屏 · 412×915</option>
+      <option value="768x1024">iPad 竖屏 · 768×1024</option>
+    </select>
+  </div>
+  <div class="grp"><span>页面</span>
+    <select id="page">
+      <option value="/#/gallery">画廊</option>
+      <option value="/#/upload">上传</option>
+      <option value="/#/random">随机图</option>
+      <option value="/#/login">登录</option>
+      <option value="/#/admin" selected>后台·站点</option>
+      <option value="/#/admin">后台·其他面板（在右侧树里点）</option>
+    </select>
+  </div>
+  <div class="grp">
+    <button id="rotate" title="横竖屏切换">⟳ 旋转</button>
+    <button id="reload" title="重新加载">↻ 刷新</button>
+  </div>
+  <span class="tip">
+    提示：iframe 与本页同源，<b>先在手机画面里登录一次</b>，之后所有页面都带登录态；
+    若已在 5173 登录过会自动继承。
+  </span>
+</header>
+
+<div id="stage">
+  <div class="device" id="dev">
+    <div class="screen" id="screen">
+      <iframe id="frame" src="/#/admin"></iframe>
+    </div>
+  </div>
+</div>
+
+<footer>
+  当前视口 <code id="vp">390×844</code> · 实际就是浏览器的 CSS 媒体查询宽度，样式与真机一致 ·
+  本页仅用于开发预览，不会打包进正式构建（构建时请删除或忽略）。
+</footer>
+
+<script>
+  const dev = document.getElementById('dev')
+  const screen = document.getElementById('screen')
+  const frame = document.getElementById('frame')
+  const vp = document.getElementById('vp')
+  let w = 390, h = 844, landscape = false
+
+  function fit() {
+    const stage = document.getElementById('stage')
+    const availW = stage.clientWidth - 90
+    const availH = stage.clientHeight - 70
+    const rw = landscape ? h : w
+    const rh = landscape ? w : h
+    const scale = Math.min(1, availW / (rw + 20), availH / (rh + 20))
+    dev.style.transform = scale < 1 ? `scale(${scale})` : ''
+    dev.style.transformOrigin = 'top center'
+    vp.textContent = `${rw}×${rh}`
+  }
+
+  function apply() {
+    const rw = landscape ? h : w
+    const rh = landscape ? w : h
+    screen.style.width = rw + 'px'
+    screen.style.height = rh + 'px'
+    frame.style.width = rw + 'px'
+    frame.style.height = rh + 'px'
+    fit()
+  }
+
+  document.getElementById('device').onchange = e => {
+    const [a, b] = e.target.value.split('x').map(Number)
+    w = a; h = b
+    apply()
+  }
+  document.getElementById('page').onchange = e => {
+    frame.src = e.target.value
+  }
+  document.getElementById('rotate').onclick = e => {
+    landscape = !landscape
+    e.target.classList.toggle('on', landscape)
+    apply()
+  }
+  document.getElementById('reload').onclick = () => {
+    frame.src = frame.src
+  }
+  window.addEventListener('resize', fit)
+  apply()
+</script>
+</body>
+</html>

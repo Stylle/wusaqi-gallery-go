@@ -118,12 +118,16 @@ onUnmounted(() => {
       <a href="#/random" :class="{ active: route === 'random' }">{{ t('随机图') }}</a>
       <a href="#/upload" :class="{ active: route === 'upload' }">{{ t('上传') }}</a>
 
-      <!-- 手机端导航面板内附主题切换（桌面隐藏） -->
+      <!-- 手机端导航面板内附主题 / 语言切换（桌面隐藏） -->
       <div class="nav-mobile" @click.stop>
         <div class="theme-switch">
           <button :class="{ on: theme.pref === 'light' }" @click="setTheme('light')">☀️ {{ t('亮色') }}</button>
           <button :class="{ on: theme.pref === 'dark' }" @click="setTheme('dark')">🌙 {{ t('暗色') }}</button>
           <button :class="{ on: theme.pref === 'system' }" @click="setTheme('system')">💻 {{ t('跟随系统') }}</button>
+        </div>
+        <div class="theme-switch lang-switch">
+          <button :class="{ on: i18n.lang === 'zh' }" @click="setLang('zh')">中文</button>
+          <button :class="{ on: i18n.lang === 'en' }" @click="setLang('en')">English</button>
         </div>
       </div>
     </nav>

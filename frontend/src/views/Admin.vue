@@ -71,6 +71,7 @@ const groups = [
 const active = ref('site')
 const s = ref(null)
 const msg = ref('')
+const msgBad = ref(false)
 const saveBusy = ref(false)
 const toast = ref(null)
 let toastTimer = null
@@ -104,6 +105,7 @@ const statsBusy = ref(false)
 
 // ---- 通知 ----
 const notifyMsg = ref('')
+const notifyOk = ref(null)   // null = 还没测过
 const notifyBusy = ref(false)
 
 // ---- 压缩方案（自动探测 / 手动档位 / 自定义）----
@@ -143,9 +145,11 @@ async function sendTestNotify() {
   notifyMsg.value = t('发送中…')
   try {
     const d = await testNotify(store.token)
+    notifyOk.value = !!d.ok
     notifyMsg.value = d.ok ? t('测试通知已发送，请查收 ✓') : `${t('失败：')}${t(d.error) || t('未知错误')}`
     showToast(notifyMsg.value, d.ok)
   } catch (e) {
+    notifyOk.value = false
     notifyMsg.value = t('失败：') + errText(e)
     showToast(t('发送失败 ✗'), false)
   } finally { notifyBusy.value = false }
@@ -279,6 +283,7 @@ async function save() {
   if (saveBusy.value) return
   if (!store.token) { msg.value = t('登录已失效，请重新登录'); showToast(msg.value, false); return }
   saveBusy.value = true
+  msgBad.value = false
   msg.value = t('保存中…')
   try {
     s.value = await saveSettings(store.token, s.value)
@@ -287,6 +292,7 @@ async function save() {
     msg.value = t('已保存 ✓（压缩方案对新上传生效）')
     showToast(t('设置已保存 ✓'))
   } catch (e) {
+    msgBad.value = true
     msg.value = t('失败：') + errText(e)
     showToast(msg.value, false)
   } finally {
@@ -586,19 +592,20 @@ const tplHint = computed(() =>
 
         <!-- 通知 -->
         <template v-else-if="currentGroup()?.custom === 'notify'">
-          <p class="muted">
+          <p class="muted" style="margin-top:0">
             {{ t('通过 Webhook 推送事件：限流告警、防爆破告警、管理员登录提醒，以及每日 / 每周 / 每月机器体检报告（PV、UV、上传数、图库总量）。兼容企业微信、钉钉、飞书、Telegram Bot 等自定义 Webhook。') }}
           </p>
 
-          <div class="user-form">
-            <div class="field">
-              <label>Webhook URL</label>
-              <input v-model="s.webhook_url" placeholder="https://..." style="max-width:520px" />
-            </div>
-            <div class="field-row">
+          <div class="panel" style="margin-top:14px">
+            <h3 class="panel-title">{{ t('连接') }}</h3>
+            <div class="field-grid">
+              <div class="field span-2">
+                <label>Webhook URL</label>
+                <input v-model="s.webhook_url" placeholder="https://..." />
+              </div>
               <div class="field">
                 <label>{{ t('请求方法') }}</label>
-                <select v-model="s.notify_method" style="max-width:140px">
+                <select v-model="s.notify_method">
                   <option value="POST">POST</option>
                   <option value="PUT">PUT</option>
                   <option value="GET">GET</option>
@@ -606,58 +613,89 @@ const tplHint = computed(() =>
               </div>
               <div class="field">
                 <label>Body {{ t('格式') }}</label>
-                <select v-model="s.notify_body_type" style="max-width:140px">
+                <select v-model="s.notify_body_type">
                   <option value="json">JSON</option>
                   <option value="text">Text</option>
                 </select>
               </div>
+              <div class="field span-2">
+                <label>{{ t('自定义请求头（JSON，可选）') }}</label>
+                <textarea v-model="s.notify_headers" rows="2" class="mono" spellcheck="false"
+                  placeholder='{"Authorization": "Bearer xxx"}'></textarea>
+              </div>
+              <div class="field span-2">
+                <label>{{ t('请求体模板（可选；留空 = 默认 JSON）') }}</label>
+                <textarea v-model="s.notify_body_tpl" rows="3" class="mono" spellcheck="false"
+                  placeholder='{"title": "{{event}}", "content": "{{message}}"}'
+                  style="font-size:12px"></textarea>
+                <span class="hint">{{ tplHint }}</span>
+              </div>
             </div>
-            <div class="field">
-              <label>{{ t('自定义请求头（JSON，可选）') }}</label>
-              <textarea v-model="s.notify_headers" rows="3" class="mono"
-                placeholder='{"Authorization": "Bearer xxx"}' style="max-width:520px;font-size:12px"></textarea>
-            </div>
-            <div class="field">
-              <label>{{ t('请求体模板（可选；留空 = 默认 JSON）') }}</label>
-              <textarea v-model="s.notify_body_tpl" rows="4" class="mono"
-                placeholder='{"title": "{{event}}", "content": "{{message}}"}'
-                style="max-width:520px;font-size:12px"></textarea>
-              <span class="hint">{{ tplHint }}</span>
+            <div class="row" style="margin:12px 0 0">
+              <button class="ghost" :disabled="notifyBusy" @click="sendTestNotify">
+                {{ notifyBusy ? t('发送中…') : t('发送测试') }}
+              </button>
+              <span class="msg-line" :class="{ bad: notifyOk === false }">{{ notifyMsg }}</span>
             </div>
           </div>
 
-          <h3>{{ t('通知事件') }}</h3>
-          <div class="user-form">
-            <label class="switch-line">
-              <input type="checkbox" :checked="s.notify_admin_login === '1'"
-                @change="switchField('notify_admin_login', $event.target.checked)" />
-              {{ t('管理员登录通知') }}
-            </label>
-            <label class="switch-line">
-              <input type="checkbox" :checked="s.notify_daily === '1'"
-                @change="switchField('notify_daily', $event.target.checked)" />
-              {{ t('每日汇报（今日 PV / UV / 上传数 / 图库总量，类似每日机器体检）') }}
-            </label>
-            <div class="field" style="margin:4px 0 4px 26px" v-if="s.notify_daily === '1'">
-              <label>{{ t('汇报时间（服务器时区 HH:MM）') }}</label>
-              <input v-model="s.notify_daily_time" type="time" style="max-width:140px" />
+          <div class="panel">
+            <h3 class="panel-title">{{ t('事件订阅') }}</h3>
+            <div class="notify-grid">
+              <div class="switch-card" :class="{ on: s.notify_admin_login === '1' }">
+                <label class="sc-main">
+                  <input type="checkbox" :checked="s.notify_admin_login === '1'"
+                    @change="switchField('notify_admin_login', $event.target.checked)" />
+                  <span class="sc-body">
+                    <span class="sc-title">{{ t('管理员登录通知') }}</span>
+                    <span class="sc-desc">{{ t('有人用管理员账号登录时推送一条消息') }}</span>
+                  </span>
+                </label>
+              </div>
+
+              <div class="switch-card" :class="{ on: s.notify_daily === '1' }">
+                <label class="sc-main">
+                  <input type="checkbox" :checked="s.notify_daily === '1'"
+                    @change="switchField('notify_daily', $event.target.checked)" />
+                  <span class="sc-body">
+                    <span class="sc-title">{{ t('每日汇报') }}</span>
+                    <span class="sc-desc">{{ t('今日 PV / UV / 上传数 / 图库总量') }}</span>
+                  </span>
+                </label>
+                <div class="sc-extra" v-if="s.notify_daily === '1'">
+                  <span>{{ t('汇报时间') }}</span>
+                  <input v-model="s.notify_daily_time" type="time" />
+                </div>
+              </div>
+
+              <div class="switch-card" :class="{ on: s.notify_weekly === '1' }">
+                <label class="sc-main">
+                  <input type="checkbox" :checked="s.notify_weekly === '1'"
+                    @change="switchField('notify_weekly', $event.target.checked)" />
+                  <span class="sc-body">
+                    <span class="sc-title">{{ t('每周周报') }}</span>
+                    <span class="sc-desc">{{ t('每周一发送，近 7 天汇总') }}</span>
+                  </span>
+                </label>
+              </div>
+
+              <div class="switch-card" :class="{ on: s.notify_monthly === '1' }">
+                <label class="sc-main">
+                  <input type="checkbox" :checked="s.notify_monthly === '1'"
+                    @change="switchField('notify_monthly', $event.target.checked)" />
+                  <span class="sc-body">
+                    <span class="sc-title">{{ t('每月月报') }}</span>
+                    <span class="sc-desc">{{ t('每月 1 号发送，近 30 天汇总') }}</span>
+                  </span>
+                </label>
+              </div>
             </div>
-            <label class="switch-line">
-              <input type="checkbox" :checked="s.notify_weekly === '1'"
-                @change="switchField('notify_weekly', $event.target.checked)" />
-              {{ t('每周一发送周报（近 7 天汇总）') }}
-            </label>
-            <label class="switch-line">
-              <input type="checkbox" :checked="s.notify_monthly === '1'"
-                @change="switchField('notify_monthly', $event.target.checked)" />
-              {{ t('每月 1 号发送月报（近 30 天汇总）') }}
-            </label>
+            <p class="hint muted" style="margin-bottom:0">{{ t('汇报时间使用服务器时区，格式 HH:MM。') }}</p>
           </div>
 
-          <div class="row" style="margin-top:14px">
+          <div class="row sticky-actions">
             <button :disabled="saveBusy" @click="save">{{ saveBusy ? t('保存中…') : t('保存全部设置') }}</button>
-            <button class="ghost" :disabled="notifyBusy" @click="sendTestNotify">{{ t('发送测试') }}</button>
-            <span class="muted">{{ notifyMsg || msg }}</span>
+            <span class="msg-line" :class="{ bad: msgBad }">{{ msg }}</span>
           </div>
         </template>
 
@@ -955,30 +993,32 @@ curl -H "Authorization: Bearer $TOKEN" \
 
         <!-- 普通配置组 -->
         <template v-else>
-          <template v-for="f in currentGroup()?.fields" :key="f.k">
-            <div class="field" v-if="f.type !== 'switch'">
-              <label>{{ t(f.label) }}</label>
-              <select v-if="f.type === 'select'" v-model="s[f.k]" style="max-width:280px">
-                <option v-for="o in f.options" :key="o" :value="o">{{ o }}</option>
-              </select>
-              <input v-else-if="f.type === 'number'" type="number" v-model.number="s[f.k]" style="max-width:280px" />
-              <input v-else v-model="s[f.k]" style="max-width:420px" />
-              <span class="hint" v-if="f.hint">{{ t(f.hint) }}</span>
-            </div>
-            <div class="field" v-else>
-              <label style="display:flex;gap:8px;align-items:center;color:var(--text)">
-                <input type="checkbox" style="width:16px;height:16px" :checked="s[f.k] === '1'"
-                  @change="s[f.k] = $event.target.checked ? '1' : '0'" /> {{ t(f.label) }}
-              </label>
-              <span class="hint" v-if="f.hint">{{ t(f.hint) }}</span>
-            </div>
-          </template>
+          <div class="field-grid">
+            <template v-for="f in currentGroup()?.fields" :key="f.k">
+              <div class="field" v-if="f.type !== 'switch'" :class="{ 'span-2': f.type !== 'number' }">
+                <label>{{ t(f.label) }}</label>
+                <select v-if="f.type === 'select'" v-model="s[f.k]">
+                  <option v-for="o in f.options" :key="o" :value="o">{{ o }}</option>
+                </select>
+                <input v-else-if="f.type === 'number'" type="number" v-model.number="s[f.k]" />
+                <input v-else v-model="s[f.k]" />
+                <span class="hint" v-if="f.hint">{{ t(f.hint) }}</span>
+              </div>
+              <div class="field span-2" v-else>
+                <label class="check-line">
+                  <input type="checkbox" :checked="s[f.k] === '1'"
+                    @change="s[f.k] = $event.target.checked ? '1' : '0'" /> {{ t(f.label) }}
+                </label>
+                <span class="hint" v-if="f.hint">{{ t(f.hint) }}</span>
+              </div>
+            </template>
+          </div>
           <p class="hint muted" v-if="currentGroup()?.hint">{{ t(currentGroup().hint) }}</p>
 
-          <div class="row" style="margin-top:18px">
+          <div class="row sticky-actions">
             <button :disabled="saveBusy" @click="save">{{ saveBusy ? t('保存中…') : t('保存全部设置') }}</button>
             <button class="ghost" @click="loadBans">{{ t('刷新封禁列表') }}</button>
-            <span class="muted">{{ msg }}</span>
+            <span class="msg-line" :class="{ bad: msgBad }">{{ msg }}</span>
           </div>
 
           <div v-if="bans.length" class="panel" style="margin-top:16px">
