@@ -161,7 +161,7 @@ onUnmounted(() => {
   </header>
 
   <main class="wrap">
-    <LockGate v-if="isLocked" />
+    <LockGate v-if="isLocked" :server-error="store.authError === 'server'" />
     <component v-else :is="views[route]" />
   </main>
 

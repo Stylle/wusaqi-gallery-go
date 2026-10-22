@@ -10,8 +10,10 @@ from datetime import datetime, timedelta, timezone
 
 from . import config, util
 
-_lock = threading.Lock()
-_conn: sqlite3.Connection | None = None
+_lock = threading.Lock()          # 写操作串行化（避免 SQLITE_BUSY）
+_init_lock = threading.Lock()     # 建表/迁移只跑一次
+_schema_ready = False
+_local = threading.local()        # 每线程一条连接：绝不能跨线程共用 Connection
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS images (
@@ -206,20 +208,34 @@ def _migrate(conn: sqlite3.Connection) -> None:
 
 
 def get_conn() -> sqlite3.Connection:
-    global _conn
-    if _conn is None:
-        _conn = sqlite3.connect(config.DB_PATH, check_same_thread=False)
-        _conn.row_factory = sqlite3.Row
-        _conn.execute("PRAGMA journal_mode=WAL")
-        _conn.execute("PRAGMA foreign_keys=ON")
-        _conn.executescript(SCHEMA)
-        for k, v in DEFAULT_SETTINGS.items():
-            _conn.execute("INSERT OR IGNORE INTO settings(k, v) VALUES (?, ?)", (k, v))
-        _conn.commit()
-        _migrate(_conn)          # 补列 + 播种 admin + 历史图片归属
-        _conn.executescript(INDEXES)
-        _conn.commit()
-    return _conn
+    """取当前线程的连接。
+
+    历史实现是全局单连接 + check_same_thread=False，但 FastAPI 的同步端点跑在线程池里，
+    多线程同时 execute 同一条连接会互相踩游标，表现为偶发
+    `sqlite3.InterfaceError: bad parameter or other API misuse` 或读到 None 字段。
+    改为线程本地连接，建表/迁移用全局锁保证只执行一次。
+    """
+    conn = getattr(_local, "conn", None)
+    if conn is None:
+        conn = sqlite3.connect(config.DB_PATH, timeout=15)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=15000")
+        conn.execute("PRAGMA foreign_keys=ON")
+        _local.conn = conn
+    global _schema_ready
+    if not _schema_ready:
+        with _init_lock:
+            if not _schema_ready:
+                conn.executescript(SCHEMA)
+                for k, v in DEFAULT_SETTINGS.items():
+                    conn.execute("INSERT OR IGNORE INTO settings(k, v) VALUES (?, ?)", (k, v))
+                conn.commit()
+                _migrate(conn)          # 补列 + 播种 admin + 历史图片归属
+                conn.executescript(INDEXES)
+                conn.commit()
+                _schema_ready = True
+    return conn
 
 
 # ---------- settings ----------
@@ -342,7 +358,8 @@ def tag_counts() -> dict[str, int]:
 
 def _user_row(row) -> dict:
     d = dict(row)
-    d["enabled"] = int(d.get("enabled", 1))
+    v = d.get("enabled")            # 老库可能是 NULL，直接 int(None) 会 500
+    d["enabled"] = 1 if v is None else int(v)
     return d
 
 

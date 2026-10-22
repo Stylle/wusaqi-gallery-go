@@ -8,6 +8,7 @@ export const store = reactive({
   user: null,
   ok: false,        // 已验证登录
   checked: false,   // 完成首次验证
+  authError: '',    // '' | 'expired'（登录失效）| 'server'（后端不可达/5xx）
 })
 
 // 关键：模块加载时就把 token 读出来（同步）。
@@ -55,18 +56,30 @@ export function clearToken() {
   authPromise = null
 }
 
-/** 启动时恢复登录态 */
+/** 启动时恢复登录态（服务端 5xx/断连会自动重试，不当作登录失效） */
 export async function checkAuth() {
   const t = readToken()
   if (t) store.token = t
+  store.authError = ''
   if (store.token) {
-    try {
-      store.user = await api.me(store.token)
-      store.ok = true
-    } catch (e) {
-      // 只有明确的 401/403 才算登录失效；网络抖动/后端重启不要清 token
-      if (e && (e.status === 401 || e.status === 403)) clearToken()
-      store.ok = false
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        store.user = await api.me(store.token)
+        store.ok = true
+        store.authError = ''
+        break
+      } catch (e) {
+        const status = e && e.status
+        if (status === 401 || status === 403) {
+          clearToken()
+          store.authError = 'expired'
+          break
+        }
+        // 网络错误 / 后端 5xx：token 保留，稍后重试一次再说
+        store.authError = 'server'
+        store.ok = false
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 400 * (attempt + 1)))
+      }
     }
   }
   store.checked = true
@@ -78,6 +91,12 @@ let authPromise = null
 export function ensureAuth() {
   if (!authPromise) authPromise = checkAuth()
   return authPromise
+}
+
+/** 手动重试（后端刚重启/网络恢复时用） */
+export function retryAuth() {
+  authPromise = null
+  return ensureAuth()
 }
 
 export async function doLogin(username, password, remember) {
