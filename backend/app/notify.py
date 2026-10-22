@@ -21,7 +21,7 @@ from . import db
 # 不少 Webhook 服务（含 Cloudflare/WAF 前置）会直接 403 掉 Python-urllib 的默认 UA，
 # 这里默认伪装成普通浏览器；后台「自定义请求头」里可以覆盖。
 DEFAULT_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-              "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 lolis-gallery/1.0")
+              "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 wusaqi-gallery/1.0")
 
 
 # 事件 → 开关键（None = 总是发送）
@@ -150,7 +150,7 @@ def send(event: str, message: str, extra: dict | None = None) -> tuple[bool, str
     method = method if method in ("POST", "PUT", "GET") else "POST"
     body_type = s.get("notify_body_type", "json")
     ctx = {
-        "site": s.get("site_title", "lolis-gallery"),
+        "site": s.get("site_title", "wusaqi-gallery"),
         "event": event,
         "message": message,
         "time": datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S"),

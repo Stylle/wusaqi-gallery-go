@@ -1,4 +1,4 @@
-"""lolis-gallery 后端。
+"""wusaqi-gallery 后端。
 
 能力总览（按版本演进）：
   v2：权限门控 + 流量防御（限流→webhook 告警→封禁）+ 站点信息后台可配
@@ -38,17 +38,17 @@ async def lifespan(_app: FastAPI):
     notify.set_geo_resolver(geo_lookup)
     threading.Thread(target=notify.report_worker, daemon=True).start()
     admin = db.get_admin()
-    lines = [f"[lolis-gallery] 数据目录 {config.DATA_DIR}",
-             f"[lolis-gallery] 管理员用户名 {admin['username'] if admin else '(未创建)'}"]
+    lines = [f"[wusaqi-gallery] 数据目录 {config.DATA_DIR}",
+             f"[wusaqi-gallery] 管理员用户名 {admin['username'] if admin else '(未创建)'}"]
     if config.ADMIN_PASSWORD == "changeme":
-        lines.append("[lolis-gallery] ⚠️  管理员密码为默认值 changeme，请设置 "
+        lines.append("[wusaqi-gallery] ⚠️  管理员密码为默认值 changeme，请设置 "
                      "ADMIN_PASSWORD 环境变量，并设 ADMIN_SYNC=1 同步到已有账号")
-    lines.append(f"[lolis-gallery] {perf.describe()}")
+    lines.append(f"[wusaqi-gallery] {perf.describe()}")
     print("\n".join(lines), flush=True)
     yield
 
 
-app = FastAPI(title="lolis-gallery", docs_url=None, redoc_url=None, lifespan=lifespan)
+app = FastAPI(title="wusaqi-gallery", docs_url=None, redoc_url=None, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
@@ -1188,7 +1188,7 @@ def download_backup(_: dict = Depends(require_admin)):
     """整站备份（数据库 + 原图 + 压缩图 + 缩略图）→ zip 下载。"""
     tmp = os.path.join(config.DATA_DIR, "backup-tmp")
     os.makedirs(tmp, exist_ok=True)
-    name = f"lolis-backup-{time.strftime('%Y%m%d-%H%M%S')}.zip"
+    name = f"wusaqi-backup-{time.strftime('%Y%m%d-%H%M%S')}.zip"
     path = os.path.join(tmp, name)
     manifest = backup.create_zip(path)
 
@@ -1304,5 +1304,5 @@ def admin_stats(_: dict = Depends(require_admin)):
 # ---------- 通知测试 ----------
 @app.post("/api/admin/notify/test")
 def notify_test(_: dict = Depends(require_admin)):
-    ok, err = notify.send("test", "这是一条来自 lolis-gallery 的测试通知 ✅")
+    ok, err = notify.send("test", "这是一条来自 wusaqi-gallery 的测试通知 ✅")
     return {"ok": ok, "error": err}

@@ -123,10 +123,10 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 # 全部可配置项与默认值（后台可调，flat 键值对，便于扩展新配置项/插件）
 DEFAULT_SETTINGS = {
     # 站点信息
-    "site_title": "lolis-gallery",
+    "site_title": "wusaqi-gallery",
     "site_icon": "",          # favicon URL 或 emoji，空 = 默认
     "site_tags": "画廊,随机图,自部署",   # 标签池：顶部筛选 chips 的来源
-    "site_footer": "Powered by lolis-gallery",
+    "site_footer": "Powered by wusaqi-gallery",
     "share_base_url": "",     # 对外分享基址，空 = 用当前访问 URL
     "upload_default_tags": "",  # 上传页默认选中的标签（逗号分隔）
     # 外观：配色风格（gradient = 炫彩渐变 / solid = 纯色单色）

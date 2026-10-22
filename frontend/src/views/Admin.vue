@@ -542,7 +542,7 @@ const tplHint = computed(() =>
 
 // 「通知」面板的消息预览：用一条手动封禁做样例，说明真实推送不是一句话
 const notifyPreview = computed(() => {
-  const site = s.value?.site_title || 'lolis-gallery'
+  const site = s.value?.site_title || 'wusaqi-gallery'
   return [
     '🚫 手动封禁 IP', '',
     '· 站点：' + site,

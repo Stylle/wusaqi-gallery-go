@@ -180,7 +180,7 @@ export async function downloadBackup(token) {
   const blob = await res.blob()
   const cd = res.headers.get('Content-Disposition') || ''
   const m = cd.match(/filename="([^"]+)"/)
-  const name = m ? m[1] : `lolis-backup-${Date.now()}.zip`
+  const name = m ? m[1] : `wusaqi-backup-${Date.now()}.zip`
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url

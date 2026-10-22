@@ -1,7 +1,7 @@
 services:
   api:
     build: ./backend
-    container_name: lolis-api
+    container_name: wusaqi-api
     restart: unless-stopped
     environment:
       # ---- 管理员账号（首次启动播种；库已存在则不覆盖）----
@@ -26,7 +26,7 @@ services:
 
   web:
     build: ./frontend
-    container_name: lolis-web
+    container_name: wusaqi-web
     restart: unless-stopped
     ports:
       - "${WEB_PORT:-8300}:80"

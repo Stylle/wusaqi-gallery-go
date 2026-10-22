@@ -61,7 +61,7 @@ def create_zip(dest: str) -> dict:
         snap = os.path.join(tmp, "metadata.db")
         db.snapshot_to(snap)               # WAL 下的安全快照
         manifest = {
-            "app": "lolis-gallery",
+            "app": "wusaqi-gallery",
             "format": 1,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             "counts": counts,

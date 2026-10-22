@@ -1,14 +1,14 @@
 # Docker Hub 镜像部署版：NAS 上无需源码与构建，直接拉取运行。
 # 用法：
-#   curl -O https://raw.githubusercontent.com/Stylle/lolis-gallery/main/docker-compose.hub.yml
-#   curl -O https://raw.githubusercontent.com/Stylle/lolis-gallery/main/.env.example -o .env
+#   curl -O https://raw.githubusercontent.com/Stylle/wusaqi-gallery/main/docker-compose.hub.yml
+#   curl -O https://raw.githubusercontent.com/Stylle/wusaqi-gallery/main/.env.example -o .env
 #   vi .env                # 改 ADMIN_PASSWORD
 #   docker compose -f docker-compose.hub.yml up -d
 # 升级：docker compose -f docker-compose.hub.yml pull && docker compose -f docker-compose.hub.yml up -d
 services:
   api:
-    image: stylle/lolis-api:latest
-    container_name: lolis-api
+    image: stylle/wusaqi-api:latest
+    container_name: wusaqi-api
     restart: unless-stopped
     environment:
       # ---- 管理员账号（首次启动播种；库已存在则不覆盖）----
@@ -31,8 +31,8 @@ services:
       start_period: 20s
 
   web:
-    image: stylle/lolis-web:latest
-    container_name: lolis-web
+    image: stylle/wusaqi-web:latest
+    container_name: wusaqi-web
     restart: unless-stopped
     ports:
       - "${WEB_PORT:-8300}:80"

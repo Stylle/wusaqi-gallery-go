@@ -7,6 +7,6 @@ export ADMIN_PASSWORD="$(cat "$BASE/pw.txt")"
 export ADMIN_TOKEN="legacy-token-for-test"
 export ALLOW_ADMIN_TOKEN="0"
 export PYTHONIOENCODING="utf-8"
-cd /e/ai/img/lolis-gallery/backend || exit 1
+cd "$(dirname "$0")/../backend" || exit 1
 exec "python3" \
   -m uvicorn app.main:app --host 127.0.0.1 --port 8010

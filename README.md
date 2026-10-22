@@ -1,4 +1,4 @@
-# lolis-gallery 🖼️
+# wusaqi-gallery 🖼️
 
 自部署的图片收藏画廊 + 随机图 API。Vue 3 + FastAPI + SQLite，双容器 Docker 部署，
 数据全部落在本地目录，**不依赖任何外部云服务**。
@@ -43,7 +43,7 @@
 ## 代码结构
 
 ```
-lolis-gallery/
+wusaqi-gallery/
 ├── backend/
 │   ├── Dockerfile
 │   └── app/
@@ -80,8 +80,8 @@ lolis-gallery/
 
 ```bash
 cd /vol1/docker                       # 按你的习惯选目录
-git clone https://github.com/Stylle/lolis-gallery.git
-cd lolis-gallery
+git clone https://github.com/Stylle/wusaqi-gallery.git
+cd wusaqi-gallery
 cp .env.example .env
 vi .env                               # 至少改 ADMIN_PASSWORD
 docker compose up -d --build
@@ -91,12 +91,12 @@ docker compose up -d --build
 
 ### 方式二：Docker Hub 镜像部署（免构建，推荐 NAS 用）
 
-镜像已发布：[`stylle/lolis-api`](https://hub.docker.com/r/stylle/lolis-api) / [`stylle/lolis-web`](https://hub.docker.com/r/stylle/lolis-web)
+镜像已发布：[`stylle/wusaqi-api`](https://hub.docker.com/r/stylle/wusaqi-api) / [`stylle/wusaqi-web`](https://hub.docker.com/r/stylle/wusaqi-web)
 
 ```bash
-mkdir -p /vol1/docker/lolis-gallery && cd /vol1/docker/lolis-gallery
-curl -O https://raw.githubusercontent.com/Stylle/lolis-gallery/main/docker-compose.hub.yml
-curl -o .env https://raw.githubusercontent.com/Stylle/lolis-gallery/main/.env.example
+mkdir -p /vol1/docker/wusaqi-gallery && cd /vol1/docker/wusaqi-gallery
+curl -O https://raw.githubusercontent.com/Stylle/wusaqi-gallery/main/docker-compose.hub.yml
+curl -o .env https://raw.githubusercontent.com/Stylle/wusaqi-gallery/main/.env.example
 vi .env                               # 至少改 ADMIN_PASSWORD
 docker compose -f docker-compose.hub.yml up -d
 ```
@@ -112,7 +112,7 @@ docker compose -f docker-compose.hub.yml pull && docker compose -f docker-compos
 在任意装了 Docker 的机器上：
 
 ```bash
-git clone https://github.com/Stylle/lolis-gallery.git && cd lolis-gallery
+git clone https://github.com/Stylle/wusaqi-gallery.git && cd wusaqi-gallery
 docker login -u stylle                # 密码处填 Docker Hub Access Token
 bash scripts/build-push.sh            # Windows 用 scripts\build-push.bat
 ```
@@ -121,7 +121,7 @@ bash scripts/build-push.sh            # Windows 用 scripts\build-push.bat
 
 ```bash
 # 回滚到指定版本（把 <sha> 换成推过的短哈希）
-docker compose -f docker-compose.hub.yml pull   # 拉不到旧标签时手动 docker pull stylle/lolis-api:<sha>
+docker compose -f docker-compose.hub.yml pull   # 拉不到旧标签时手动 docker pull stylle/wusaqi-api:<sha>
 ```
 
 ### 环境变量
