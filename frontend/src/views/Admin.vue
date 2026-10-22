@@ -108,9 +108,9 @@ const notifyBusy = ref(false)
 
 // ---- 压缩方案（自动探测 / 手动档位 / 自定义）----
 const sys = ref(null)
-const fmtMem = (mb) => (mb ? (mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`) : '未知')
+const fmtMem = (mb) => (mb ? (mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`) : t('未知'))
 const profileLabel = (name) =>
-  (sys.value?.profiles || []).find(p => p.name === name)?.label || name
+  t((sys.value?.profiles || []).find(p => p.name === name)?.label || name)
 const profileOptions = computed(() => {
   const det = sys.value?.perf?.detected
   const autoDesc = det
@@ -119,8 +119,8 @@ const profileOptions = computed(() => {
   return [
     { v: 'auto', label: t('自动探测（推荐）'), desc: autoDesc },
     ...(sys.value?.profiles || []).map(p => ({
-      v: p.name, label: p.label,
-      desc: `${p.desc} · ${t('质量')} ${p.quality} / ${p.max_width}px / ${t('并发')} ${p.concurrency}`,
+      v: p.name, label: t(p.label),
+      desc: `${t(p.desc)} · ${t('质量')} ${p.quality} / ${p.max_width}px / ${t('并发')} ${p.concurrency}`,
     })),
     { v: 'custom', label: t('自定义'), desc: t('手动指定质量、最大宽度、编码强度与并发数') },
   ]
@@ -143,7 +143,7 @@ async function sendTestNotify() {
   notifyMsg.value = t('发送中…')
   try {
     const d = await testNotify(store.token)
-    notifyMsg.value = d.ok ? t('测试通知已发送，请查收 ✓') : `${t('失败：')}${d.error || t('未知错误')}`
+    notifyMsg.value = d.ok ? t('测试通知已发送，请查收 ✓') : `${t('失败：')}${t(d.error) || t('未知错误')}`
     showToast(notifyMsg.value, d.ok)
   } catch (e) {
     notifyMsg.value = t('失败：') + errText(e)
@@ -338,7 +338,7 @@ async function submitUser() {
 }
 
 async function removeUser(u) {
-  const purge = confirm(`${t('删除用户')} ${u.username}？\n\n${t('确定 = 其图片转交给管理员')}\n${t('取消')} = 不删除`)
+  const purge = confirm(`${t('删除用户')} ${u.username}?\n\n${t('确定 = 其图片转交给管理员')}\n${t('取消')} = 不删除`)
   if (!purge) return
   try {
     await deleteUser(store.token, u.id, false)
@@ -415,7 +415,7 @@ const tplHint = computed(() =>
             <p class="muted" style="margin-top:0">
               {{ t('程序自动探测') }}：<b>{{ sys.perf.detected.cores }} {{ t('核 /') }} {{ fmtMem(sys.perf.detected.memMb) }}</b>
               → {{ t('建议') }}「{{ profileLabel(sys.perf.autoProfile) }}」<br />
-              {{ t('实际生效') }}：<b>{{ sys.perf.label }}</b> · {{ sys.perf.format }} · {{ t('质量') }} {{ sys.perf.quality }} ·
+              {{ t('实际生效') }}：<b>{{ t(sys.perf.label) }}</b> · {{ sys.perf.format }} · {{ t('质量') }} {{ sys.perf.quality }} ·
               {{ t('最大宽') }} {{ sys.perf.maxWidth || t('不缩放') }}px · {{ t('并发') }} {{ sys.perf.concurrency }} ·
               {{ t('单图分辨率上限') }} {{ sys.perf.maxPixels }} MP
               <span class="muted" v-if="sys.perf.mode === 'auto'">（{{ t('跟随自动探测') }}）</span>
@@ -440,8 +440,8 @@ const tplHint = computed(() =>
               </thead>
               <tbody>
                 <tr v-for="p in sys?.profiles || []" :key="p.name">
-                  <td><b>{{ p.label }}</b> <span class="mono muted" style="font-size:11px">{{ p.name }}</span></td>
-                  <td class="muted" style="font-size:12px">{{ p.desc }}</td>
+                  <td><b>{{ t(p.label) }}</b> <span class="mono muted" style="font-size:11px">{{ p.name }}</span></td>
+                  <td class="muted" style="font-size:12px">{{ t(p.desc) }}</td>
                   <td>{{ p.quality }}</td>
                   <td>{{ p.max_width }}px</td>
                   <td>{{ p.max_pixels }} MP</td>
@@ -507,7 +507,7 @@ const tplHint = computed(() =>
                 <tr v-for="f in sys?.formats || []" :key="f.ext">
                   <td class="mono">{{ f.label }}</td>
                   <td><span class="rec" :class="{ no: !f.recommend }">{{ f.recommend ? t('推荐') : t('可用') }}</span></td>
-                  <td class="muted" style="font-size:12px">{{ f.note }}</td>
+                  <td class="muted" style="font-size:12px">{{ t(f.note) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -558,7 +558,7 @@ const tplHint = computed(() =>
                 <tbody>
                   <tr v-for="ip in stats.topIps" :key="ip.ip">
                     <td class="mono">{{ ip.ip }}</td>
-                    <td>{{ ip.geo || '…' }}</td>
+                    <td>{{ t(ip.geo) || '…' }}</td>
                     <td>{{ ip.count }}</td>
                     <td class="mono muted" style="font-size:11.5px">{{ ip.last_at }}</td>
                   </tr>
@@ -707,7 +707,7 @@ const tplHint = computed(() =>
                 {{ t('忽略的') }} {{ localInfo.invalidCount }} {{ t('个文件（非图片 / 无法解析）') }}
               </summary>
               <div v-for="p in localInfo.invalid" :key="p.key" class="mono muted" style="font-size:11.5px">
-                {{ p.key }} — {{ p.error }}
+                {{ p.key }} — {{ t(p.error) }}
               </div>
             </details>
           </div>
@@ -717,7 +717,7 @@ const tplHint = computed(() =>
             <p class="muted" style="margin-top:0">
               {{ compMsg || t('尚未检查') }}
               <template v-if="compInfo?.settings">
-                · {{ compInfo.settings.label || compInfo.settings.profile }} ·
+                · {{ t(compInfo.settings.label) || compInfo.settings.profile }} ·
                 {{ compInfo.settings.format }} / {{ t('质量') }} {{ compInfo.settings.quality }}
                 / {{ t('最大宽') }} {{ compInfo.settings.maxWidth || t('不限') }}px
               </template>
@@ -771,7 +771,7 @@ GET /api/images?page=1&amp;limit=24&amp;sort=latest|random[&amp;tag=xxx][&amp;mi
           <pre>POST /api/auth/login     {"username":"admin","password":"***","remember":true}
   → { token, remember, expiresAt, user: { id, username, role, quotaMb,
       usedBytes, remainingBytes, imageCount, maxUploadMb, ... } }
-POST /api/auth/logout    {{ t('销当前 token') }}
+POST /api/auth/logout    {{ t('注销当前 token') }}
 GET  /api/auth/me        {{ t('当前用户 + 用量') }}
 POST /api/auth/password  {"old":"***","new":"***"}</pre>
 
@@ -782,7 +782,7 @@ GET /api/random/image?variant=compressed|original   # 302 {{ t('直链') }}</pre
           <h3>{{ t('图片（登录）') }}</h3>
           <pre>POST   /api/upload        multipart: files=@a.png&amp;tag=xxx
 PATCH  /api/images/{id}   {"filename":"newname"}  {{ t('重命名（原图/压缩/缩略图同步）') }}
-                          {"tag":"风景"}          {{ t('改标签') }}
+                          {"tag":"landscape"}          {{ t('改标签') }}
 DELETE /api/images/{id}   {{ t('删原图 + 压缩图 + 缩略图') }}
   {{ t('权限：管理员可操作全部；普通用户仅限自己上传的图') }}</pre>
 
@@ -834,7 +834,7 @@ curl -X POST -H "Content-Type: application/json" \
 
 # {{ t('上传（带标签）') }}
 curl -H "Authorization: Bearer $TOKEN" \
-     -F "files=@pic.jpg" -F "tag=壁纸" http://your-host/api/upload
+     -F "files=@pic.jpg" -F "tag=wallpaper" http://your-host/api/upload
 
 # {{ t('随机压缩图直链（开放公开后可直接用于 Markdown）') }}
 ![random](https://your-host/api/random/image?variant=compressed)</pre>

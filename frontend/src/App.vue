@@ -128,7 +128,7 @@ onUnmounted(() => {
       </div>
     </nav>
 
-    <div class="theme-switch desk-theme" title="Theme / 语言">
+    <div class="theme-switch desk-theme" :title="t('Theme / 语言')">
       <button :class="{ on: theme.pref === 'light' }" @click="setTheme('light')">☀️</button>
       <button :class="{ on: theme.pref === 'dark' }" @click="setTheme('dark')">🌙</button>
       <button :class="{ on: i18n.lang === 'zh' }" @click="toggleLang">{{ i18n.lang === 'zh' ? '中' : 'EN' }}</button>
