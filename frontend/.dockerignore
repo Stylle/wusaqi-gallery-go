@@ -1,5 +1,0 @@
-# 前端构建上下文瘦身
-node_modules/
-dist/
-qa/
-*.log

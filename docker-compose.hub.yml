@@ -1,14 +1,14 @@
-# Docker Hub 镜像部署版：NAS 上无需源码与构建，直接拉取运行。
+# Docker Hub 镜像部署版（单容器）：NAS / VPS 直接拉取运行，无需源码与构建。
 # 用法：
 #   curl -O https://raw.githubusercontent.com/Stylle/wusaqi-gallery/main/docker-compose.hub.yml
-#   curl -O https://raw.githubusercontent.com/Stylle/wusaqi-gallery/main/.env.example -o .env
+#   curl -o .env https://raw.githubusercontent.com/Stylle/wusaqi-gallery/main/.env.example
 #   vi .env                # 改 ADMIN_PASSWORD
 #   docker compose -f docker-compose.hub.yml up -d
 # 升级：docker compose -f docker-compose.hub.yml pull && docker compose -f docker-compose.hub.yml up -d
 services:
-  api:
-    image: stylle/wusaqi-api:latest
-    container_name: wusaqi-api
+  gallery:
+    image: stylle/wusaqi-gallery:latest
+    container_name: wusaqi-gallery
     restart: unless-stopped
     environment:
       # ---- 管理员账号（首次启动播种；库已存在则不覆盖）----
@@ -20,24 +20,13 @@ services:
       - RATE_LIMIT=${RATE_LIMIT:-120}
     volumes:
       - ./data:/data
-    expose:
-      - "8000"
+    ports:
+      - "${WEB_PORT:-8300}:80"
     healthcheck:
+      # 经 nginx 全链路探活（反代→uvicorn→数据库）
       test: ["CMD", "python", "-c",
-             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).status==200 else 1)"]
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1/api/health', timeout=3).status==200 else 1)"]
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 20s
-
-  web:
-    image: stylle/wusaqi-web:latest
-    container_name: wusaqi-web
-    restart: unless-stopped
-    ports:
-      - "${WEB_PORT:-8300}:80"
-    volumes:
-      - ./data:/data:ro
-    depends_on:
-      api:
-        condition: service_healthy
+      start_period: 25s

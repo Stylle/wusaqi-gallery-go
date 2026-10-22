@@ -1,7 +1,9 @@
+# 源码构建部署（本机开发 / 自定义修改时用）
+# 拉取镜像部署请用 docker-compose.hub.yml
 services:
-  api:
-    build: ./backend
-    container_name: wusaqi-api
+  gallery:
+    build: .
+    container_name: wusaqi-gallery
     restart: unless-stopped
     environment:
       # ---- 管理员账号（首次启动播种；库已存在则不覆盖）----
@@ -13,26 +15,13 @@ services:
       - RATE_LIMIT=${RATE_LIMIT:-120}
     volumes:
       - ./data:/data
-    expose:
-      - "8000"
+    ports:
+      - "${WEB_PORT:-8300}:80"
     healthcheck:
-      # 就绪探针：数据库与目录初始化完成后 /api/health 才返回 200
+      # 经 nginx 全链路探活（反代→uvicorn→数据库）
       test: ["CMD", "python", "-c",
-             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).status==200 else 1)"]
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1/api/health', timeout=3).status==200 else 1)"]
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 20s
-
-  web:
-    build: ./frontend
-    container_name: wusaqi-web
-    restart: unless-stopped
-    ports:
-      - "${WEB_PORT:-8300}:80"
-    volumes:
-      - ./data:/data:ro
-    depends_on:
-      # 等 api 真正健康后再启动 web，避免启动窗口期 502
-      api:
-        condition: service_healthy
+      start_period: 25s

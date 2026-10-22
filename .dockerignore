@@ -1,0 +1,13 @@
+# 单容器镜像构建上下文瘦身（context = 仓库根目录）
+.git
+.github
+data
+docs
+qa
+scripts
+*.md
+.vps-admin-password
+frontend/node_modules
+frontend/dist
+**/__pycache__
+**/*.pyc

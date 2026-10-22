@@ -23,7 +23,10 @@ def main():
     with open(os.path.join(ROOT, "docker-compose.yml"), encoding="utf-8") as f:
         raw = f.read()
     compose = yaml.safe_load(raw)
-    env = compose["services"]["api"]["environment"]
+    check("单容器化（仅一个服务）", list(compose["services"]) == ["gallery"],
+          str(list(compose["services"])))
+    env = compose["services"]["gallery"]["environment"]
+    check("healthcheck 存在", "healthcheck" in compose["services"]["gallery"])
 
     check("compose YAML 可解析", isinstance(env, list) and len(env) > 0)
     keys = [e.split("=", 1)[0] for e in env]

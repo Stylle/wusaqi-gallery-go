@@ -23,52 +23,59 @@
 
 ## 架构
 
+**单容器双进程**（supervisor 管理）：一个镜像里 nginx 负责静态与反代，uvicorn 负责 API。
+
 ```
-┌────────────┐   80    ┌─────────────────┐
-│   web      │────────▶│  静态文件(Vue)   │ nginx 直接命中
-│ (nginx)    │         │  /api ──反代──▶  │┐
-└────────────┘         │  /files /thumbs  ││ 长缓存直接伺服
-                       │  /compressed     ││ (volume 只读挂载)
-                       └─────────────────┘│
-                       ┌─────────────────┐▼
-                       │  api (FastAPI)   │  上传/压缩/鉴权/限流/webhook
-                       │  SQLite + 卷存储 │  不对外暴露端口
-                       └─────────────────┘
+        :8300 (对外唯一端口)
+┌─────────────────────────────────────┐
+│  wusaqi-gallery 容器                │
+│  ┌───────────────────────────────┐  │
+│  │ nginx                         │  │
+│  │  /            SPA 静态文件     │  │
+│  │  /files /thumbs /compressed   │  │ ← /data 卷，一年 immutable 长缓存
+│  │  /api/ ──反代──▶ 127.0.0.1:8000│  │
+│  └───────────────────────────────┘  │
+│  ┌───────────────────────────────┐  │
+│  │ uvicorn (FastAPI + SQLite)    │  │ 上传/压缩/鉴权/限流/webhook
+│  └───────────────────────────────┘  │
+│  supervisor 守护两个进程，崩了自动拉起 │
+└─────────────────────────────────────┘
 ```
 
 - **省流量设计**：随机 API 与画廊网格默认只出缩略图/压缩版，原图仅在明确请求时出网；
   nginx 对图片路径下发 `immutable` 长缓存，重复访问不回源。
-- 图片目录由 web 容器只读挂载直接伺服，请求不经过 Python，单机吞吐瓶颈只在 nginx。
+- 图片请求由 nginx 直接命中卷内文件，不经过 Python。
+- 单容器的好处：一次 pull、一条 compose、一份日志；数据仍在 `data/` 一个目录里。
 
 ## 代码结构
 
 ```
 wusaqi-gallery/
-├── backend/
-│   ├── Dockerfile
-│   └── app/
-│       ├── main.py      # 路由与入口：公开接口/会话/图片/后台/防御中间件
-│       ├── config.py    # 运行时配置（全部可用环境变量覆盖）
-│       ├── db.py        # SQLite：建表迁移/设置/图片/用户/会话/封禁/访问统计
-│       ├── auth.py      # 登录会话（记住我 30d / 会话 12h）与权限
-│       ├── compress.py  # 压缩管线（格式/质量/最大宽度）
-│       ├── notify.py    # webhook 事件推送与周期报告
-│       ├── backup.py    # 整站备份与恢复
-│       ├── perf.py      # 启动环境探测（日志展示）
-│       └── util.py      # 密码哈希与通用工具
-├── frontend/
-│   ├── Dockerfile       # node 构建 → nginx 运行
-│   ├── nginx.conf       # 静态+图片伺服 + /api 反代 + 缓存策略
-│   └── src/
-│       ├── api.js       # 全部后端调用封装
-│       ├── auth.js      # 登录态（双存储 token）与全局校验
-│       ├── site.js      # 站点公开配置下发与动态标题/图标
-│       ├── theme.js     # 三态主题
-│       ├── i18n.js      # 中英文案
-│       └── views/       # Gallery / Random / Upload / Admin / Login
-├── docs/                # 历史版本规划文档（PLAN/V3/V4）
-├── qa/                  # 回归脚本（compose 契约/单测/端到端/并发冒烟）
-├── docker-compose.yml
+├── Dockerfile            # 单容器镜像：node 编前端 → python + nginx + supervisor
+├── deploy/
+│   ├── nginx.conf        # 静态+图片伺服 + /api 反代 + 一年 immutable 缓存
+│   └── supervisord.conf  # 双进程守护（uvicorn + nginx）
+├── backend/app/
+│   ├── main.py           # 路由与入口：公开接口/会话/图片/后台/防御中间件
+│   ├── config.py         # 运行时配置（全部可用环境变量覆盖）
+│   ├── db.py             # SQLite：建表迁移/设置/图片/用户/会话/封禁/访问统计
+│   ├── auth.py           # 登录会话（记住我 30d / 会话 12h）与权限
+│   ├── compress.py       # 压缩管线（格式/质量/最大宽度）
+│   ├── notify.py         # webhook 事件推送与周期报告
+│   ├── backup.py         # 整站备份与恢复
+│   ├── perf.py           # 启动环境探测（日志展示）
+│   └── util.py           # 密码哈希与通用工具
+├── frontend/src/
+│   ├── api.js            # 全部后端调用封装
+│   ├── auth.js           # 登录态（双存储 token）与全局校验
+│   ├── site.js           # 站点公开配置下发与动态标题/图标
+│   ├── theme.js          # 三态主题
+│   ├── i18n.js           # 中英文案
+│   └── views/            # Gallery / Random / Upload / Admin / Login
+├── docs/                 # 历史版本规划文档（PLAN/V3/V4）
+├── qa/                   # 回归脚本（compose 契约/单测/端到端/并发冒烟）
+├── docker-compose.yml        # 源码构建部署
+├── docker-compose.hub.yml    # 镜像拉取部署（推荐）
 └── .env.example
 ```
 
@@ -80,7 +87,7 @@ wusaqi-gallery/
 
 ### 方式一：Docker Hub 镜像部署（推荐，NAS / VPS 通用，免源码免构建）
 
-镜像已发布：[`stylle/wusaqi-api`](https://hub.docker.com/r/stylle/wusaqi-api) / [`stylle/wusaqi-web`](https://hub.docker.com/r/stylle/wusaqi-web)
+镜像已发布：[`stylle/wusaqi-gallery`](https://hub.docker.com/r/stylle/wusaqi-gallery)（单容器：nginx + FastAPI 同容器）
 
 ```bash
 mkdir -p /opt/wusaqi-gallery && cd /opt/wusaqi-gallery
@@ -130,11 +137,12 @@ docker login -u stylle                # 密码处填 Docker Hub Access Token（R
 bash scripts/build-push.sh            # Windows 用 scripts\build-push.bat
 ```
 
-脚本会构建并推送 `latest` + 当前 git 短哈希双标签，便于回滚：
+脚本会构建单容器镜像并推送 `latest` + 当前 git 短哈希双标签，便于回滚：
 
 ```bash
 # 回滚到指定版本（把 <sha> 换成推过的短哈希）
-docker compose -f docker-compose.hub.yml pull   # 拉不到旧标签时手动 docker pull stylle/wusaqi-api:<sha>
+docker pull stylle/wusaqi-gallery:<sha>
+# 然后在 docker-compose.hub.yml 里把 image 标签改成对应 sha 再 up -d
 ```
 
 ### 环境变量
