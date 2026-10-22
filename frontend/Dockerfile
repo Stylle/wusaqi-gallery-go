@@ -10,7 +10,7 @@ COPY . .
 RUN npm run build
 
 # ---- 运行阶段 ----
-FROM nginx:1.27-slim
+FROM nginx:1.31.8-alpine-slim
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80
