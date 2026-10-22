@@ -76,44 +76,57 @@ wusaqi-gallery/
 `main.py` 的 `PUBLIC_SETTING_KEYS`（若需公开下发）/ `put_settings` 校验规则里声明，
 前端后台树自动渲染，无需改其他代码。
 
-## 快速部署（NAS / 任意 Docker 主机）
+## 快速部署
 
-```bash
-cd /vol1/docker                       # 按你的习惯选目录
-git clone https://github.com/Stylle/wusaqi-gallery.git
-cd wusaqi-gallery
-cp .env.example .env
-vi .env                               # 至少改 ADMIN_PASSWORD
-docker compose up -d --build
-```
-
-访问 `http://<主机IP>:8300`，用 `.env` 里的账号密码登录即可。
-
-### 方式二：Docker Hub 镜像部署（免构建，推荐 NAS 用）
+### 方式一：Docker Hub 镜像部署（推荐，NAS / VPS 通用，免源码免构建）
 
 镜像已发布：[`stylle/wusaqi-api`](https://hub.docker.com/r/stylle/wusaqi-api) / [`stylle/wusaqi-web`](https://hub.docker.com/r/stylle/wusaqi-web)
 
 ```bash
-mkdir -p /vol1/docker/wusaqi-gallery && cd /vol1/docker/wusaqi-gallery
+mkdir -p /opt/wusaqi-gallery && cd /opt/wusaqi-gallery
 curl -O https://raw.githubusercontent.com/Stylle/wusaqi-gallery/main/docker-compose.hub.yml
 curl -o .env https://raw.githubusercontent.com/Stylle/wusaqi-gallery/main/.env.example
 vi .env                               # 至少改 ADMIN_PASSWORD
 docker compose -f docker-compose.hub.yml up -d
 ```
 
-升级只需重新拉取：
+访问 `http://<主机IP>:8300`，用 `.env` 里的账号密码登录即可。
+
+日常管理：
 
 ```bash
-docker compose -f docker-compose.hub.yml pull && docker compose -f docker-compose.hub.yml up -d
+docker compose -f docker-compose.hub.yml logs -f     # 看日志
+docker compose -f docker-compose.hub.yml pull && \
+docker compose -f docker-compose.hub.yml up -d       # 升级到 latest
+docker compose -f docker-compose.hub.yml down        # 停止（data/ 数据不受影响）
+```
+
+> 数据全部在部署目录的 `data/` 里（SQLite + 图片），备份/迁移 = 拷走这个目录。
+
+### 方式二：源码构建部署（需要改代码自用时）
+
+```bash
+git clone https://github.com/Stylle/wusaqi-gallery.git && cd wusaqi-gallery
+cp .env.example .env && vi .env
+docker compose up -d --build
 ```
 
 ### 发布新镜像（维护者）
 
-在任意装了 Docker 的机器上：
+标准构建机为 GreenCloud VPS（`/opt/wusaqi-gallery`，已克隆源码并登录 Docker Hub）：
+
+```bash
+ssh root@<vps>
+cd /opt/wusaqi-gallery
+git pull
+bash scripts/build-push.sh            # 构建并推送 latest + git 短哈希双标签
+```
+
+任意装了 Docker 的机器也可发布：
 
 ```bash
 git clone https://github.com/Stylle/wusaqi-gallery.git && cd wusaqi-gallery
-docker login -u stylle                # 密码处填 Docker Hub Access Token
+docker login -u stylle                # 密码处填 Docker Hub Access Token（RW 权限）
 bash scripts/build-push.sh            # Windows 用 scripts\build-push.bat
 ```
 
