@@ -3,13 +3,12 @@
 登录规则对齐常规站点：
   勾「记住我」→ token 存 localStorage，有效期 remember_days（默认 30 天）
   不勾       → token 存 sessionStorage，有效期 session_hours（默认 12 小时）
-兼容：`Authorization: Bearer <ADMIN_TOKEN>` 仍视为 admin，但可用
-     `ALLOW_ADMIN_TOKEN=0` 关闭（关闭后 Token 不再能换会话）。
+鉴权只认账号密码换来的会话 token，无任何万能凭据。
 """
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from . import config, db, util
+from . import db, util
 
 
 def _now() -> datetime:
@@ -78,13 +77,9 @@ def make_session(user: dict, remember: bool) -> dict:
 
 
 def resolve_token(tok: str) -> dict | None:
-    """token → user（过期/停用返回 None）。"""
+    """会话 token → user（过期/停用返回 None）。"""
     if not tok:
         return None
-    # 万能 Token（可用 ALLOW_ADMIN_TOKEN=0 彻底关闭）
-    if (config.ALLOW_ADMIN_TOKEN and config.ADMIN_TOKEN
-            and secrets.compare_digest(tok, config.ADMIN_TOKEN)):
-        return db.get_user(db.ADMIN_ID) or db.get_admin()
     sess = db.get_session(tok)
     if not sess:
         return None

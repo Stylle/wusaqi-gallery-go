@@ -12,7 +12,6 @@ export const site = reactive({
   upload_max_mb: '',     // 全局单图上限（MB），后端算好下发
   upload_formats: '',    // 支持的扩展名，逗号分隔
   theme_style: 'solid',  // 'gradient' = 炫彩渐变 / 'solid' = 纯色
-  token_login: '0',      // '1' = 允许用管理员 Token 直登（由后端环境变量决定）
 })
 
 export function setSite(obj) {

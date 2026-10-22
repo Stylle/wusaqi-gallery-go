@@ -27,19 +27,19 @@ def main():
 
     check("compose YAML 可解析", isinstance(env, list) and len(env) > 0)
     keys = [e.split("=", 1)[0] for e in env]
-    for k in ("ADMIN_USERNAME", "ADMIN_PASSWORD", "ADMIN_TOKEN", "ALLOW_ADMIN_TOKEN", "ADMIN_SYNC"):
+    for k in ("ADMIN_USERNAME", "ADMIN_PASSWORD", "ADMIN_SYNC"):
         check(f"声明了 {k}", k in keys, str(keys))
+    for gone in ("ADMIN_TOKEN", "ALLOW_ADMIN_TOKEN"):
+        check(f"已移除 {gone}", gone not in keys, str(keys))
 
     check("不再有 :? 强制必填", ":?" not in raw)
-    check("ALLOW_ADMIN_TOKEN 默认 0（默认关闭 Token 直登）",
-          "ALLOW_ADMIN_TOKEN=${ALLOW_ADMIN_TOKEN:-0}" in raw)
     check("ADMIN_SYNC 默认 0（不覆盖后台改的密码）", "ADMIN_SYNC=${ADMIN_SYNC:-0}" in raw)
-    check("ADMIN_PASSWORD 允许留空（回落 ADMIN_TOKEN）", "ADMIN_PASSWORD=${ADMIN_PASSWORD:-}" in raw)
+    check("ADMIN_PASSWORD 允许留空（回落 changeme）", "ADMIN_PASSWORD=${ADMIN_PASSWORD:-}" in raw)
 
     # 后端读取的变量必须和 compose 声明的一致
     cfg = open(os.path.join(ROOT, "backend", "app", "config.py"), encoding="utf-8").read()
     used = set(re.findall(r'(?:environ\.get|_flag)\("([A-Z_]+)"', cfg))
-    for k in ("ADMIN_USERNAME", "ADMIN_PASSWORD", "ADMIN_TOKEN", "ALLOW_ADMIN_TOKEN", "ADMIN_SYNC"):
+    for k in ("ADMIN_USERNAME", "ADMIN_PASSWORD", "ADMIN_SYNC"):
         check(f"后端读取 {k}", k in used, str(sorted(used)))
 
     # .env.example 覆盖所有 compose 变量

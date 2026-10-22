@@ -1,13 +1,18 @@
-"""V4 单元级验收：环境变量解析 + 管理员播种/同步（每个用例独立进程）。"""
+"""单元级验收：环境变量解析 + 管理员播种/同步（每个用例独立进程）。
+
+路径自适应：python 解释器取当前运行的 sys.executable，backend/TMP 按本文件位置推导，
+在任意机器、任意盘符上均可直接运行：python qa/unit-admin-env.py
+"""
 import json
 import os
 import shutil
 import subprocess
 import sys
 
-PY = r"python3"
-BACKEND = r"/path/to/project/backend"
-TMP = r"/path/to/project/.tmp-v4"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BACKEND = os.path.join(ROOT, "backend")
+TMP = os.path.join(ROOT, ".tmp-qa-unit")
+PY = sys.executable
 
 passed = failed = 0
 
@@ -24,8 +29,7 @@ def check(name, ok, extra=""):
 
 def probe(code, env=None):
     e = dict(os.environ)
-    for k in ("ADMIN_TOKEN", "ADMIN_PASSWORD", "ADMIN_USERNAME", "ADMIN_SYNC",
-              "ALLOW_ADMIN_TOKEN", "DATA_DIR"):
+    for k in ("ADMIN_PASSWORD", "ADMIN_USERNAME", "ADMIN_SYNC", "DATA_DIR"):
         e.pop(k, None)
     e["PYTHONIOENCODING"] = "utf-8"
     e.update(env or {})
@@ -42,8 +46,6 @@ from app import config
 print(json.dumps({
   'username': config.ADMIN_USERNAME,
   'password': config.ADMIN_PASSWORD,
-  'token': config.ADMIN_TOKEN,
-  'allow': config.ALLOW_ADMIN_TOKEN,
   'sync': config.ADMIN_SYNC,
 }, ensure_ascii=False))
 """
@@ -67,26 +69,15 @@ def main():
     os.makedirs(TMP, exist_ok=True)
 
     print("\n[1] 环境变量解析")
-    r = probe(CONF, {"ADMIN_TOKEN": "tk-abc"})
-    check("只给 ADMIN_TOKEN → 用户名 admin", r["username"] == "admin", r["username"])
-    check("密码回落 ADMIN_TOKEN", r["password"] == "tk-abc", r["password"])
-    check("Token 直登默认开启", r["allow"] is True, r["allow"])
-
-    r = probe(CONF, {"ADMIN_USERNAME": "owner", "ADMIN_PASSWORD": "p1",
-                     "ADMIN_TOKEN": "tk-abc", "ALLOW_ADMIN_TOKEN": "0"})
-    check("自定义用户名生效", r["username"] == "owner", r["username"])
-    check("自定义密码优先于 ADMIN_TOKEN", r["password"] == "p1", r["password"])
-    check("ALLOW_ADMIN_TOKEN=0 关闭直登", r["allow"] is False, r["allow"])
-
     r = probe(CONF, {})
+    check("全空 → 用户名 admin", r["username"] == "admin", r["username"])
     check("全空 → changeme", r["password"] == "changeme", r["password"])
-    check("未配 token → 直登关闭", r["allow"] is False, r["allow"])
-    check("未配 token → token 为空", r["token"] == "", r["token"])
+    check("全空 → 同步关闭", r["sync"] is False, r["sync"])
 
-    r = probe(CONF, {"ADMIN_TOKEN": "t", "ALLOW_ADMIN_TOKEN": "true"})
-    check("开关接受 true 字面量", r["allow"] is True, r["allow"])
-    r = probe(CONF, {"ADMIN_TOKEN": "t", "ALLOW_ADMIN_TOKEN": "off"})
-    check("开关接受 off 字面量", r["allow"] is False, r["allow"])
+    r = probe(CONF, {"ADMIN_USERNAME": "owner", "ADMIN_PASSWORD": "p1", "ADMIN_SYNC": "1"})
+    check("自定义用户名生效", r["username"] == "owner", r["username"])
+    check("自定义密码生效", r["password"] == "p1", r["password"])
+    check("同步开关生效", r["sync"] is True, r["sync"])
 
     print("\n[2] 播种（全新库）")
     d = os.path.join(TMP, "seed")
@@ -119,6 +110,7 @@ print(json.dumps({'n': len(rows), 'ids': [r['id'] for r in rows]}, ensure_ascii=
     check("管理员账号唯一", r["n"] == 1, str(r))
     check("id 仍为 admin", r["ids"] == ["admin"], str(r["ids"]))
 
+    shutil.rmtree(TMP, ignore_errors=True)
     print(f"\n===== {passed} passed, {failed} failed =====")
     return 1 if failed else 0
 

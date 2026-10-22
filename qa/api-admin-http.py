@@ -1,12 +1,18 @@
-"""V4 端到端：自定义管理员账号 + ALLOW_ADMIN_TOKEN=0（针对 8010 测试实例）。"""
+"""端到端：自定义管理员账号 + 会话生命周期（针对 8010 测试实例）。
+
+启动方式（先把后端跑在 8010，端口可用 BASE 覆盖）：
+  python qa/api-admin-http.py
+账号取环境变量 QA_USER / QA_PASS，缺省 owner / qa-pass-123。
+"""
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
 
-BASE = "http://127.0.0.1:8010"
-PW = open(r"/path/to/project/pw.txt", encoding="utf-8").read().strip()
-TOKEN = "legacy-token-for-test"
+BASE = os.environ.get("QA_BASE", "http://127.0.0.1:8010")
+USER = os.environ.get("QA_USER", "owner")
+PW = os.environ.get("QA_PASS", "qa-pass-123")
 
 passed = failed = 0
 
@@ -40,26 +46,26 @@ def call(method, path, body=None, token=None):
 
 st, ps = call("GET", "/api/public/settings")
 check("public settings 可用", st == 200, str(st))
-check("token_login = 0", ps.get("token_login") == "0", str(ps.get("token_login")))
+check("响应不含 token_login 字段", "token_login" not in ps, str(ps))
 
-st, r = call("POST", "/api/auth/login", {"username": "owner", "password": PW})
+st, r = call("POST", "/api/auth/login", {"username": USER, "password": PW})
 check("自定义账号登录成功", st == 200, f"{st} {r}")
 tk = r.get("token", "")
 check("返回会话 token", bool(tk))
 
 st, me = call("GET", "/api/auth/me", token=tk)
-check("身份为 owner / admin", me.get("username") == "owner" and me.get("role") == "admin", str(me))
+check(f"身份为 {USER} / admin", me.get("username") == USER and me.get("role") == "admin", str(me))
 
 st, _ = call("GET", "/api/users", token=tk)
 check("会话可访问管理接口", st == 200, str(st))
 
-st, _ = call("POST", "/api/admin/verify", token=TOKEN)
-check("ADMIN_TOKEN 直登被拒绝（401）", st == 401, str(st))
+st, _ = call("POST", "/api/admin/verify", token=tk)
+check("旧 verify 端点已移除（404）", st == 404, str(st))
 
 st, _ = call("POST", "/api/auth/login", {"username": "admin", "password": PW})
-check("默认用户名 admin 不可用", st == 401, str(st))
+check("默认用户名 admin 不可用（若播种即 owner）", st == 401, str(st))
 
-st, _ = call("POST", "/api/auth/login", {"username": "owner", "password": "wrong-pass"})
+st, _ = call("POST", "/api/auth/login", {"username": USER, "password": "wrong-pass"})
 check("错误密码被拒绝", st == 401, str(st))
 
 st, _ = call("POST", "/api/auth/logout", token=tk)

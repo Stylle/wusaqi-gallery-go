@@ -107,15 +107,6 @@ export async function doLogin(username, password, remember) {
   return d
 }
 
-/** 管理员 Token 直登（兼容入口） */
-export async function doTokenLogin(token, remember) {
-  const d = await api.verifyToken(token)
-  setToken(token, remember)
-  store.user = d.user || { id: 'admin', username: 'admin', role: 'admin' }
-  store.ok = true
-  return d
-}
-
 export async function doLogout() {
   try { await api.logout(store.token) } catch { /* 后端不可达也照常退出 */ }
   clearToken()

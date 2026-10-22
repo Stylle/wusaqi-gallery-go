@@ -1,167 +1,159 @@
-# lolis-gallery
+# lolis-gallery 🖼️
 
-自部署的二次元图片收藏画廊，附带随机图片 API。功能形态复刻自 lolis.im，视觉为独立设计（参考 maxcat 风格配色），为家庭服务器 / NAS 场景做了**双 URL 省流量策略**与**流量防御**。
-
-技术栈：Vue 3 + Vite ｜ FastAPI + SQLite ｜ Pillow ｜ nginx ｜ Docker Compose
+自部署的图片收藏画廊 + 随机图 API。Vue 3 + FastAPI + SQLite，双容器 Docker 部署，
+数据全部落在本地目录，**不依赖任何外部云服务**。
 
 ## 功能总览
 
-- **画廊**：瀑布流（按原图比例排布，不裁切）+ 小/中/大三档尺寸 + 灯箱；骨架屏；右键复制原图 / 压缩图 / 缩略图 URL
-- **手机端**：≤768px 顶栏折叠为汉堡菜单；画廊自动 3/2/1 列；右键菜单换成**长按**；后台左侧树变顶部横向滚动条；表格横向滑动；刘海屏安全区与 44px 触控目标
-- **标签**：顶部标签 chips 点击即筛选（带计数）；上传时可选标签，默认值后台配置
-- **随机图 API**：`/api/random`（JSON / 302 直链），`variant=compressed|original`
-- **多用户**：管理员后台建号；普通用户有**容量配额**与**独立压缩参数**（管理员可改）；用户后台只看自己用量与上传入口
-- **权限**：游客仅可浏览画廊；复制链接、随机图、上传、后台需登录；画廊支持「仅我的」筛选（登录用户）
-- **图片管理**：重命名（原图 / 压缩图 / 缩略图同步改名）、删除（三份文件一起删）；管理员可操作全部，普通用户仅限自己的图
-- **上传**：拖拽 / 多选 / **Ctrl+V 粘贴上传**，逐文件进度 + 压缩前后对比 + 配额条
-- **压缩方案（方案 B）**：启动自动探测 CPU 核数与内存（容器读 cgroup 限额）→ `tiny / small / normal` 三档，各档独立质量、最大宽度、webp 编码强度、分辨率上限与**压缩并发数**（1 核机器恒为 1，防大图并发打爆内存）；后台可切「自动 / 指定档 / 自定义」，并附方案对照表与格式推荐
-- **上传限制**：全局单图大小 + 用户级单图大小、容量配额、**每日 / 每周 / 每月张数**（滑动窗口，管理员不受限）；新建用户默认 5MB 单图 / 500MB 配额 / 30 张每日 / 100 张每周 / 250 张每月，可在后台改默认值
-- **三态主题**：亮色 / 暗黑 / 跟随系统，玻璃拟态卡片
-- **树形后台**（komari 风格）：站点信息、分享基址、标签、压缩、流量防御、登录规则、用户管理全部可配
-- **流量防御**：随机图接口每 IP 每分钟限流，超限 → **webhook 告警** + 封禁；登录失败超阈值 → 封禁（防爆破）
-- **本地图库导入**：把图片直接丢进 `data/uploads`，后台「媒体维护 → 本地图库导入」扫描入库（原路径不变、归属管理员）；缺压缩版/缩略图的图片可在同一面板**分批补压缩**（每次 3~5 张，低配机器也不打满 CPU）
+| 模块 | 说明 |
+|---|---|
+| 画廊 | 瀑布流网格 + 灯箱大图，标签筛选 / 仅看我的 / 三档网格尺寸 |
+| 三 URL 策略 | 每张图落盘三份：原图 `files/`、压缩版 `compressed/`、缩略图 `thumbs/`，右键可复制任意一种链接 |
+| 压缩可配置 | 格式（webp/jpeg/png）、质量、最大宽度，后台调整对新上传生效；每人还可覆盖全局压缩参数 |
+| 随机图 API | `/api/random` JSON 与 302 直链两种形态，`variant=compressed\|original` 选择出图版本，外链/Markdown 直接用 |
+| 上传 | 拖拽多选批量上传，逐文件进度条 + 压缩前后大小对比 |
+| 权限门控 | 游客只能浏览画廊；复制链接 / 随机 API / 上传 / 后台均需登录；随机 API 可在后台一键转公开外链 |
+| 多用户 | 管理员可创建普通用户，配额（总容量/单图上限/日周月上传数）逐人可调 |
+| 流量防御 | 随机接口限流 → 超限 webhook 告警 + IP 封禁 N 分钟；登录爆破计数封禁；黑白名单；内网 IP 永不封禁 |
+| 通知 | webhook 推送（登录 / 封禁 / 解封 / 限流等事件分类开关），支持测试发送 |
+| 后台 | 树形配置面板：站点信息（标题/图标/标签/页脚）、压缩、防御、用户、备份，全部热生效 |
+| 备份恢复 | 一键打包整个数据目录为 zip 下载，上传 zip 一键恢复 |
+| 主题 | 亮色 / 暗黑 / 跟随系统三态 + 纯色 / 炫彩两套配色风格，手机端完整适配（后台为抽屉式侧栏） |
+| 国际化 | 中 / 英文界面切换 |
 
-## 省流量设计（本项目核心）
+## 架构
 
-| 目录 | 内容 | 用途 |
-|---|---|---|
-| `data/uploads/YYYYMMDD/` | 原图 | 仅明确请求时出网 |
-| `data/compressed/` | 压缩版（参数可按用户覆盖） | **对外分享 / 随机 API 默认给这份** |
-| `data/thumbs/` | 600px WebP 缩略图 | 画廊网格加载 |
+```
+┌────────────┐   80    ┌─────────────────┐
+│   web      │────────▶│  静态文件(Vue)   │ nginx 直接命中
+│ (nginx)    │         │  /api ──反代──▶  │┐
+└────────────┘         │  /files /thumbs  ││ 长缓存直接伺服
+                       │  /compressed     ││ (volume 只读挂载)
+                       └─────────────────┘│
+                       ┌─────────────────┐▼
+                       │  api (FastAPI)   │  上传/压缩/鉴权/限流/webhook
+                       │  SQLite + 卷存储 │  不对外暴露端口
+                       └─────────────────┘
+```
 
-配合图片一年期 `immutable` 缓存 + 限流封禁，家庭宽带小水管也能稳定供图。
+- **省流量设计**：随机 API 与画廊网格默认只出缩略图/压缩版，原图仅在明确请求时出网；
+  nginx 对图片路径下发 `immutable` 长缓存，重复访问不回源。
+- 图片目录由 web 容器只读挂载直接伺服，请求不经过 Python，单机吞吐瓶颈只在 nginx。
 
-## 登录规则
+## 代码结构
 
-- 账号密码登录（管理员在后台「用户管理」建号，无公开注册）
-- **记住我**：勾选 → 30 天（存 `localStorage`）；不勾 → 12 小时（存 `sessionStorage`，关浏览器失效）
-- 有效期可在后台「账号与权限 → 登录规则」调整
-- 万能 `ADMIN_TOKEN` 默认**关闭**；设 `ALLOW_ADMIN_TOKEN=1` 且配置了 `ADMIN_TOKEN` 才启用（启用时登录页会多出 Token 登录入口）
+```
+lolis-gallery/
+├── backend/
+│   ├── Dockerfile
+│   └── app/
+│       ├── main.py      # 路由与入口：公开接口/会话/图片/后台/防御中间件
+│       ├── config.py    # 运行时配置（全部可用环境变量覆盖）
+│       ├── db.py        # SQLite：建表迁移/设置/图片/用户/会话/封禁/访问统计
+│       ├── auth.py      # 登录会话（记住我 30d / 会话 12h）与权限
+│       ├── compress.py  # 压缩管线（格式/质量/最大宽度）
+│       ├── notify.py    # webhook 事件推送与周期报告
+│       ├── backup.py    # 整站备份与恢复
+│       ├── perf.py      # 启动环境探测（日志展示）
+│       └── util.py      # 密码哈希与通用工具
+├── frontend/
+│   ├── Dockerfile       # node 构建 → nginx 运行
+│   ├── nginx.conf       # 静态+图片伺服 + /api 反代 + 缓存策略
+│   └── src/
+│       ├── api.js       # 全部后端调用封装
+│       ├── auth.js      # 登录态（双存储 token）与全局校验
+│       ├── site.js      # 站点公开配置下发与动态标题/图标
+│       ├── theme.js     # 三态主题
+│       ├── i18n.js      # 中英文案
+│       └── views/       # Gallery / Random / Upload / Admin / Login
+├── docs/                # 历史版本规划文档（PLAN/V3/V4）
+├── qa/                  # 回归脚本（compose 契约/单测/端到端/并发冒烟）
+├── docker-compose.yml
+└── .env.example
+```
 
-## 管理员账号（环境变量）
+**扩展约定**：新增一个后台可调配置项 = `db.DEFAULT_SETTINGS` 加键 +
+`main.py` 的 `PUBLIC_SETTING_KEYS`（若需公开下发）/ `put_settings` 校验规则里声明，
+前端后台树自动渲染，无需改其他代码。
 
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `ADMIN_USERNAME` | `admin` | 首次启动（空库）创建的管理员用户名 |
-| `ADMIN_PASSWORD` | 回落 `ADMIN_TOKEN`，否则 `changeme` | 首次启动的密码；库已存在时**不覆盖** |
-| `ADMIN_TOKEN` | 空 | 万能 Token；留空即无此凭据 |
-| `ALLOW_ADMIN_TOKEN` | 未设时有 Token 则 1，否则 0 | `0` 完全关闭 Token 直登 |
-| `ADMIN_SYNC` | `0` | `1` = 每次启动把库里的管理员用户名/密码覆盖为上面两项（**忘记密码的救援开关**） |
-
-启动日志会打印当前管理员用户名与 Token 直登状态（不打印密码）。密码若仍是 `changeme` 会有醒目告警。
-
-**忘记密码**：改 `.env` 的 `ADMIN_PASSWORD` + 设 `ADMIN_SYNC=1` → `docker compose up -d` 重启 → 登录后把 `ADMIN_SYNC` 改回 `0`（否则每次重启都会覆盖后台改过的密码）。
-
-## 部署（NAS / 任意 Docker 主机）
+## 快速部署（NAS / 任意 Docker 主机）
 
 ```bash
-cd /vol1/docker
+cd /vol1/docker                       # 按你的习惯选目录
 git clone https://github.com/Stylle/lolis-gallery.git
 cd lolis-gallery
-cp .env.example .env        # 编辑 .env：ADMIN_PASSWORD 必改
+cp .env.example .env
+vi .env                               # 至少改 ADMIN_PASSWORD
 docker compose up -d --build
 ```
 
-访问 `http://<NAS_IP>:8300`。更新：`git pull && docker compose up -d --build`。
+访问 `http://<主机IP>:8300`，用 `.env` 里的账号密码登录即可。
 
-- 全部数据（图片 + 数据库）在 `./data`，备份该目录 = 备份整站
-- 镜像现场构建，不依赖公共镜像仓库
-- **首次部署**：用 `.env` 里的 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 登录 → 后台建用户、改站点信息与分享基址
-- **从 v3 升级**：老 `.env` 里的 `ADMIN_TOKEN` 仍可作为 admin 密码登录（`ADMIN_PASSWORD` 缺省回落到它）；Token 直登默认关闭，需要时设 `ALLOW_ADMIN_TOKEN=1`
+### 环境变量
 
-## 本地开发（无 Docker）
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `ADMIN_USERNAME` | `admin` | 首次启动播种的管理员用户名（库已存在不覆盖） |
+| `ADMIN_PASSWORD` | `changeme` | 首次启动的密码；库已存在时不覆盖，启动日志会告警 |
+| `ADMIN_SYNC` | `0` | 忘记密码救援：设 `1` 重启一次，强制把库里管理员账密同步为上面两项，完成后改回 `0` |
+| `WEB_PORT` | `8300` | 对外 HTTP 端口 |
+| `RATE_LIMIT` | `120` | 随机图接口每 IP 每分钟限流，`0` 关闭（后台也可调） |
+
+> 其余全部配置（压缩参数、webhook、黑白名单、上传上限、站点信息等）在后台管理面板调整，存数据库、热生效。
+
+### 更新 / 迁移 / 备份
 
 ```bash
-# 后端
-cd backend
-python -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-DATA_DIR=../data ADMIN_USERNAME=admin ADMIN_PASSWORD=devpass123 \
-  uvicorn app.main:app --reload --port 8000
+# 更新到最新版
+git pull && docker compose up -d --build
 
-# 前端（另开终端，vite 已配好 /api /files /thumbs /compressed 代理）
-cd frontend
-npm install && npm run dev
+# 迁移到新机器：停服后整个拷走 data/ 即可（SQLite + 图片自包含）
+# 日常备份：后台「备份」页一键下载 zip，或直接备份 data/ 目录
 ```
 
-打开 http://127.0.0.1:5173 。后端**只读环境变量**，不读 `.env` 文件。
+## API 摘要
 
-## 手机端适配
-
-| 断点 | 变化 |
-|---|---|
-| ≤900px | 内容区收窄内边距 |
-| ≤768px | 顶栏折叠为汉堡菜单（含主题切换）、画廊 3/2 列、后台左侧树变顶部横向条、表格横向滚动、表单控件 16px 防 iOS 缩放、按钮 ≥42px |
-| ≤560px | 画廊「大」档变单列、角标缩小 |
-| `hover: none` | 关闭所有仅鼠标准备的位移/阴影 |
-
-手机上**长按图片 500ms** 唤出与右键相同的菜单（复制链接 / 重命名 / 删除），灯箱内的「操作 ▾」也可用。
-
-## Webhook 告警
-
-后台「流量与安全 → 流量防御」填 Webhook URL，触发限流封禁或爆破封禁时 POST JSON：
-
-```json
-{
-  "event": "rate_limit",
-  "site": "椒盐画廊",
-  "ip": "1.2.3.4",
-  "limit_per_minute": 60,
-  "ban_minutes": 10,
-  "time": "2026-10-22T00:00:00+00:00"
-}
-```
-
-事件名：`rate_limit` / `auth_brute_force`。
-
-## API 速查
+鉴权统一 `Authorization: Bearer <token>`，token 来自 `POST /api/auth/login`。
 
 ```
-GET  /api/public/settings                              # 站点公开信息（含 share_base_url / token_login）
-GET  /api/tags                                          # 标签 + 计数
-GET  /api/images?page=1&limit=24&sort=latest|random[&tag=&mine=1]
+GET  /api/health                  # 存活探针（compose healthcheck 用）
+GET  /api/public/settings         # 站点公开信息
+GET  /api/tags                    # 标签列表
+GET  /api/images?page=&limit=&sort=latest|random&tag=&mine=
 GET  /api/random?variant=compressed|original[&redirect=true]
-GET  /api/random/image?variant=compressed|original      # 302 直链
-
-POST   /api/auth/login     {username,password,remember}  → token
-POST   /api/auth/logout
-GET    /api/auth/me                                     # 用户信息 + 用量
-POST   /api/auth/password
-
-POST   /api/upload         multipart files=@a.png&tag=xxx
-PATCH  /api/images/{id}    {filename?|tag?}              # 重命名 / 改标签
-DELETE /api/images/{id}                                 # 删三份文件
-
-GET    /api/users          # 管理员：列表 + 用量
-POST   /api/users          # 管理员：建号
-PATCH  /api/users/{id}
-DELETE /api/users/{id}?purge=false
-
-GET/PUT /api/admin/settings
-GET     /api/admin/system                              # 压缩方案运行态（探测结果 / 档位 / 格式）
-GET     /api/admin/local/scan?dry_run=true&limit=50    # 扫描 uploads 未入库原图（dry_run=false 导入）
-POST    /api/admin/local/compress?dry_run=true&limit=5  # 补生成缺失的压缩版/缩略图
-POST    /api/admin/reindex                             # 兼容别名：全量扫描导入
-GET     /api/admin/bans
+GET  /api/random/image?variant=   # 302 直链
+POST /api/auth/login|logout       GET /api/auth/me
+POST /api/admin/upload            # multipart files
+PUT  /api/admin/settings          POST /api/admin/reindex
+*    /api/admin/*                 # 用户/封禁/黑白名单/备份/通知（管理员）
 ```
 
-完整字段说明见后台「开发者 → API 文档」。
+完整字段说明见站内「后台 → API 文档」。
 
-## 目录结构
+## 本地开发（不依赖 Docker）
 
-```
-├── docker-compose.yml
-├── PLAN.md / PLAN-V3.md / PLAN-V4.md   # 原始计划 / v3 用户体系 / v4 移动端与部署配置
-├── qa/                      # 验收脚本（接口 / 环境变量 / compose 契约）
-├── backend/                 # FastAPI：账号会话/上传/压缩/随机/权限/限流/webhook
-│   └── app/
-│       ├── main.py          # 路由与业务
-│       ├── auth.py          # 登录 / 会话 / 权限
-│       ├── db.py            # SQLite（自动迁移建表）
-│       ├── compress.py      # 缩略图 / 压缩 / 支持格式清单
-│       ├── perf.py          # 压缩方案：机器探测 / 档位 / 并发槽
-│       └── util.py          # 短 id / 文件 key / 密码哈希
-└── frontend/                # Vue3 SPA（瀑布流画廊 / 树形后台 / 登录）
+```bash
+# 后端（Windows 示例，任意 python ≥3.11）
+cd backend
+pip install -r requirements.txt
+ADMIN_USERNAME=admin ADMIN_PASSWORD=test123 DATA_DIR=./data \
+  python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+# 前端（/api、/files 等自动代理到 8000）
+cd frontend
+npm ci
+npm run dev        # http://127.0.0.1:5173
 ```
 
-扩展性：配置项集中注册（`db.DEFAULT_SETTINGS` + `main.py` 的 `put_settings` 规则），后台树形面板按分组渲染——加新配置组不必动核心逻辑。
+## QA 回归脚本
+
+```bash
+python qa/check-compose.py       # compose 与 .env.example 契约
+python qa/unit-admin-env.py      # 环境变量解析/播种/同步（自包含）
+python qa/api-admin-http.py      # 端到端（需先起 8010 测试实例）
+python qa/concurrent-smoke.py    # 并发冒烟（需先起后端）
+```
+
+## 许可
+
+仅供个人学习与自部署使用。

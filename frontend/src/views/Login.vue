@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue'
-import { doLogin, doTokenLogin } from '../auth.js'
+import { doLogin } from '../auth.js'
 import { site } from '../site.js'
 import { t } from '../i18n.js'
 
@@ -10,22 +10,13 @@ const remember = ref(true)
 const msg = ref('')
 const busy = ref(false)
 
-// 管理员 Token 兼容入口
-const tokenMode = ref(false)
-const token = ref('')
-
 async function submit() {
   if (busy.value) return
   busy.value = true
   msg.value = ''
   try {
-    if (tokenMode.value) {
-      if (!token.value.trim()) throw new Error(t('请填写 Token'))
-      await doTokenLogin(token.value.trim(), remember.value)
-    } else {
-      if (!username.value.trim()) throw new Error(t('请填写用户名'))
-      await doLogin(username.value.trim(), password.value, remember.value)
-    }
+    if (!username.value.trim()) throw new Error(t('请填写用户名'))
+    await doLogin(username.value.trim(), password.value, remember.value)
     location.hash = '#/gallery'
   } catch (e) {
     msg.value = e.status === 429 ? t('尝试次数过多，已临时封禁，请稍后再试') : e.message
@@ -44,18 +35,14 @@ async function submit() {
       </h2>
       <p class="muted" style="margin-top:-6px">{{ t('登录后可上传图片、复制链接与使用随机图 API。') }}</p>
 
-      <div class="field" v-if="!tokenMode">
+      <div class="field">
         <label>{{ t('用户名') }}</label>
         <input v-model="username" autocomplete="username" placeholder="username" @keyup.enter="submit" />
       </div>
-      <div class="field" v-else>
-        <label>{{ t('管理员 Token') }}</label>
-        <input v-model="token" type="password" placeholder="ADMIN_TOKEN" @keyup.enter="submit" />
-      </div>
 
       <div class="field">
-        <label>{{ tokenMode ? '' : t('密码') }}</label>
-        <input v-if="!tokenMode" v-model="password" type="password" autocomplete="current-password"
+        <label>{{ t('密码') }}</label>
+        <input v-model="password" type="password" autocomplete="current-password"
           placeholder="password" @keyup.enter="submit" />
       </div>
 
@@ -70,9 +57,6 @@ async function submit() {
       <p class="tag-err" style="min-height:20px">{{ msg }}</p>
 
       <div class="login-foot">
-        <a href="javascript:void 0" v-if="site.token_login === '1'" @click="tokenMode = !tokenMode">
-          {{ tokenMode ? t('← 用账号密码登录') : t('用管理员 Token 登录') }}
-        </a>
         <span class="muted">{{ t('没有账号？联系管理员开通。') }}</span>
       </div>
     </div>

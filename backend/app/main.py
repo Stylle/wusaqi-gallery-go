@@ -1,8 +1,10 @@
 """lolis-gallery 后端。
 
-v2：权限门控 + 流量防御（限流→webhook 告警→封禁）+ 站点信息后台可配。
-v3：用户体系（账号密码登录 / 配额 / 每人压缩参数 / 图片归属）+ 标签筛选 +
-    图片重命名与删除 + 按日期分目录存储 + 分享基址。
+能力总览（按版本演进）：
+  v2：权限门控 + 流量防御（限流→webhook 告警→封禁）+ 站点信息后台可配
+  v3：用户体系（账号密码登录 / 配额 / 每人压缩参数 / 图片归属）+ 标签筛选 +
+      图片重命名与删除 + 按日期分目录存储 + 分享基址
+  v4：多用户角色管理 / 通知分类开关 / 封禁黑白名单 / 备份恢复 / 主题切换
 设计约定：新增配置项只需在 db.DEFAULT_SETTINGS 加键 + 在 main.py 的
 PUBLIC_SETTING_KEYS / put_settings 规则里声明，前后端自动生效。
 """
@@ -36,10 +38,8 @@ async def lifespan(_app: FastAPI):
     notify.set_geo_resolver(geo_lookup)
     threading.Thread(target=notify.report_worker, daemon=True).start()
     admin = db.get_admin()
-    token_state = "启用" if (config.ALLOW_ADMIN_TOKEN and config.ADMIN_TOKEN) else "关闭"
     lines = [f"[lolis-gallery] 数据目录 {config.DATA_DIR}",
-             f"[lolis-gallery] 管理员用户名 {admin['username'] if admin else '(未创建)'}",
-             f"[lolis-gallery] ADMIN_TOKEN 直登 {token_state}"]
+             f"[lolis-gallery] 管理员用户名 {admin['username'] if admin else '(未创建)'}"]
     if config.ADMIN_PASSWORD == "changeme":
         lines.append("[lolis-gallery] ⚠️  管理员密码为默认值 changeme，请设置 "
                      "ADMIN_PASSWORD 环境变量，并设 ADMIN_SYNC=1 同步到已有账号")
@@ -444,8 +444,6 @@ def health():
 def public_settings():
     s = db.get_settings()
     out = {k: s.get(k, "") for k in PUBLIC_SETTING_KEYS}
-    # 前端据此决定是否显示「用管理员 Token 登录」入口（非 DB 配置，来自环境变量）
-    out["token_login"] = "1" if (config.ALLOW_ADMIN_TOKEN and config.ADMIN_TOKEN) else "0"
     # 上传面板的提示信息：单图上限与可用格式（后台设置为准，默认 5MB）
     out["upload_max_mb"] = str(int(s.get("upload_max_mb") or 0) or 5)
     out["upload_formats"] = "jpg,jpeg,png,webp,avif,gif,bmp"
@@ -541,11 +539,9 @@ def login(payload: dict, request: Request):
 
 
 @app.post("/api/auth/logout")
-def logout(request: Request, authorization: str = Header(default="")):
+def logout(authorization: str = Header(default="")):
     tok = _bearer(authorization)
-    is_root_token = (config.ALLOW_ADMIN_TOKEN and config.ADMIN_TOKEN
-                     and secrets.compare_digest(tok, config.ADMIN_TOKEN))
-    if tok and not is_root_token:
+    if tok:
         db.delete_session(tok)
     return {"ok": True}
 
@@ -779,11 +775,6 @@ def delete_image(image_id: str, user: dict = Depends(require_user)):
 
 
 # ---------- 后台配置 ----------
-@app.post("/api/admin/verify")
-def verify(user: dict = Depends(require_user)):
-    return {"ok": True, "user": auth.public_user(user)}
-
-
 @app.get("/api/admin/settings")
 def get_settings(_: dict = Depends(require_admin)):
     return db.get_settings()
@@ -1037,7 +1028,6 @@ def local_compress(dry_run: bool = True, limit: int = 5,
 @app.post("/api/admin/reindex")
 def reindex(admin: dict = Depends(require_admin)):
     """v4 兼容别名：等价于「本地图库导入」全量执行一次。"""
-    limit = 100000
     known = db.all_keys()
     scanned, pending = _local_pending(known)
     lim = limits_for(admin)

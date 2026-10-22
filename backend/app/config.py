@@ -19,16 +19,8 @@ DB_PATH = os.path.join(DATA_DIR, "metadata.db")
 # ---------- 管理员账号 ----------
 # 首次启动时用它播种管理员；库已存在则不覆盖（改密码走后台或 ADMIN_SYNC）
 ADMIN_USERNAME = (os.environ.get("ADMIN_USERNAME") or "admin").strip() or "admin"
-# 密码优先级：ADMIN_PASSWORD > ADMIN_TOKEN（兼容 v2/v3 老部署）> changeme
-ADMIN_PASSWORD = (os.environ.get("ADMIN_PASSWORD") or os.environ.get("ADMIN_TOKEN")
-                  or "changeme")
-
-# 万能 Token（v2 遗留能力）。留空 = 没有这个凭据
-ADMIN_TOKEN = (os.environ.get("ADMIN_TOKEN") or "").strip()
-
-# 是否允许用 ADMIN_TOKEN 直接换会话。
-# 未显式设置时：配了 ADMIN_TOKEN 就默认开（老部署行为不变），否则关。
-ALLOW_ADMIN_TOKEN = _flag("ALLOW_ADMIN_TOKEN", bool(ADMIN_TOKEN))
+# 首次启动的密码；库已存在时不覆盖（改密码走后台「修改密码」或 ADMIN_SYNC）
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD") or "changeme"
 
 # 启动时把库里的管理员用户名/密码强制同步为上面两个环境变量（忘记密码时的救援开关）
 ADMIN_SYNC = _flag("ADMIN_SYNC", False)

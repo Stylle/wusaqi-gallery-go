@@ -54,10 +54,6 @@ export const changePassword = (token, oldPwd, newPwd) =>
     body: JSON.stringify({ old: oldPwd, new: newPwd }),
   }).then(json)
 
-/** 管理员 Token 直登（兼容入口）：验证后直接把它当 token 用 */
-export const verifyToken = (token) =>
-  fetch('/api/admin/verify', { method: 'POST', headers: auth(token) }).then(json)
-
 // ---------- 随机图 ----------
 export const getRandom = (variant, token) =>
   fetch(`/api/random?variant=${variant}`, { headers: auth(token) }).then(json)

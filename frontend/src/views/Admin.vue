@@ -1033,7 +1033,7 @@ const notifyPreview = computed(() => {
           <h3>{{ t('公开接口（游客）') }}</h3>
           <pre>GET /api/public/settings
   → { site_title, site_icon, site_tags, site_footer, random_public,
-      share_base_url, upload_default_tags, token_login }
+      share_base_url, upload_default_tags }
 
 GET /api/tags
   → { tags: [{ name, count }] }
