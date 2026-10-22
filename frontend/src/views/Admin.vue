@@ -537,7 +537,23 @@ function switchField(k, checked) { s.value[k] = checked ? '1' : '0' }
 
 // 模板变量提示（含字面 {{}}，必须放 JS 里，不能直接写进模板插值）
 const tplHint = computed(() =>
-  t('可用变量：{{event}} 事件、{{message}} 内容、{{time}} 时间、{{site}} 站点名，以及事件附加字段（如 {{ip}}）'))
+  t('可用变量：{{title}} 标题、{{text}} 多行正文、{{event}} 事件名、{{time}} 时间、{{site}} 站点名、{{fields}} 附加字段 JSON，以及 {{ip}} {{geo}} {{reason}} 等具体字段'))
+
+// 「通知」面板的消息预览：用一条手动封禁做样例，说明真实推送不是一句话
+const notifyPreview = computed(() => {
+  const site = s.value?.site_title || 'lolis-gallery'
+  return [
+    '🚫 手动封禁 IP', '',
+    '· 站点：' + site,
+    '· 时间：' + new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-'),
+    '· IP：203.0.113.7',
+    '· 封禁时长：1 天',
+    '· 原因：高频抓取随机图接口',
+    '· 解封时间：2026-11-21 17:20',
+    '· 操作人：admin',
+    '· 归属地：美国 弗吉尼亚州 Ashburn',
+  ].join('\n')
+})
 </script>
 
 <template>
@@ -766,7 +782,7 @@ const tplHint = computed(() =>
         <!-- 通知 -->
         <template v-else-if="currentGroup()?.custom === 'notify'">
           <p class="muted" style="margin-top:0">
-            {{ t('通过 Webhook 推送事件：限流告警、防爆破告警、管理员登录提醒，以及每日 / 每周 / 每月机器体检报告（PV、UV、上传数、图库总量）。兼容企业微信、钉钉、飞书、Telegram Bot 等自定义 Webhook。') }}
+            {{ t('通过 Webhook 推送事件：限流与防爆破告警、管理员登录、手动封禁/解封、备份恢复，以及每日 / 每周 / 每月体检报告。每条消息都带站点、时间、IP、归属地等明细，兼容企业微信、钉钉、飞书、Telegram Bot 等。') }}
           </p>
 
           <div class="panel" style="margin-top:14px">
@@ -799,7 +815,7 @@ const tplHint = computed(() =>
               <div class="field span-2">
                 <label>{{ t('请求体模板（可选；留空 = 默认 JSON）') }}</label>
                 <textarea v-model="s.notify_body_tpl" rows="3" class="mono" spellcheck="false"
-                  placeholder='{"title": "{{event}}", "content": "{{message}}"}'
+                  placeholder='{"title": "{{title}}", "content": "{{text}}"}'
                   style="font-size:12px"></textarea>
                 <span class="hint">{{ tplHint }}</span>
               </div>
@@ -809,6 +825,16 @@ const tplHint = computed(() =>
                 {{ notifyBusy ? t('发送中…') : t('发送测试') }}
               </button>
               <span class="msg-line" :class="{ bad: notifyOk === false }">{{ notifyMsg }}</span>
+            </div>
+
+            <div class="field span-2" style="margin-top:16px">
+              <label>{{ t('消息预览（实际推送内容，以「手动封禁」为例）') }}</label>
+              <pre class="notify-preview" data-no-i18n>{{ notifyPreview }}</pre>
+              <span class="hint">
+                {{ s.notify_body_type === 'text'
+                  ? t('当前 Body 格式为 Text：上面这段会原样作为请求体发送')
+                  : t('当前 Body 格式为 JSON：上面这段放在 text 字段里，同时附带 ip / geo / reason 等独立字段，方便对方系统解析') }}
+              </span>
             </div>
           </div>
 
@@ -822,6 +848,39 @@ const tplHint = computed(() =>
                   <span class="sc-body">
                     <span class="sc-title">{{ t('管理员登录通知') }}</span>
                     <span class="sc-desc">{{ t('有人用管理员账号登录时推送一条消息') }}</span>
+                  </span>
+                </label>
+              </div>
+
+              <div class="switch-card" :class="{ on: s.notify_security === '1' }">
+                <label class="sc-main">
+                  <input type="checkbox" :checked="s.notify_security === '1'"
+                    @change="switchField('notify_security', $event.target.checked)" />
+                  <span class="sc-body">
+                    <span class="sc-title">{{ t('安全告警') }}</span>
+                    <span class="sc-desc">{{ t('触发随机图限流、疑似暴力破解并封禁时推送') }}</span>
+                  </span>
+                </label>
+              </div>
+
+              <div class="switch-card" :class="{ on: s.notify_ban === '1' }">
+                <label class="sc-main">
+                  <input type="checkbox" :checked="s.notify_ban === '1'"
+                    @change="switchField('notify_ban', $event.target.checked)" />
+                  <span class="sc-body">
+                    <span class="sc-title">{{ t('封禁与解封') }}</span>
+                    <span class="sc-desc">{{ t('在后台手动封禁 / 解除某个 IP 时推送') }}</span>
+                  </span>
+                </label>
+              </div>
+
+              <div class="switch-card" :class="{ on: s.notify_restore === '1' }">
+                <label class="sc-main">
+                  <input type="checkbox" :checked="s.notify_restore === '1'"
+                    @change="switchField('notify_restore', $event.target.checked)" />
+                  <span class="sc-body">
+                    <span class="sc-title">{{ t('备份恢复完成') }}</span>
+                    <span class="sc-desc">{{ t('从备份包还原数据后推送一条记录') }}</span>
                   </span>
                 </label>
               </div>
@@ -1171,6 +1230,9 @@ curl -H "Authorization: Bearer $TOKEN" \
           </p>
 
           <h3>{{ t('临时封禁') }}</h3>
+          <p class="hint muted">
+            {{ t('本机与局域网地址（127.0.0.1、192.168.x.x、10.x.x.x、172.16~31.x.x）不会被封禁，也不走限流，避免把自己锁在门外。') }}
+          </p>
           <div class="field-grid">
             <div class="field">
               <label>{{ t('IP 地址') }}</label>
@@ -1216,7 +1278,7 @@ curl -H "Authorization: Bearer $TOKEN" \
           <p v-else class="hint muted">{{ t('当前没有临时封禁的 IP。') }}</p>
 
           <h3>{{ t('黑名单（永久拒绝）') }}</h3>
-          <p class="hint muted">{{ t('支持单个 IP 或网段（如 1.2.3.0/24、1.2.3.*）。命中即返回 403，直到手动移除。') }}</p>
+          <p class="hint muted">{{ t('支持单个 IP 或网段（如 1.2.3.0/24、1.2.3.*）。命中即返回 403，直到手动移除；内网网段不允许加入，防止误封自己。') }}</p>
           <div class="field-grid">
             <div class="field">
               <label>{{ t('IP / 网段') }}</label>

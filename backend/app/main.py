@@ -33,6 +33,7 @@ async def lifespan(_app: FastAPI):
     """启动即建表/迁移，并把管理员配置摘要打到日志里（不含密码）。"""
     db.get_conn()
     db.purge_visits()
+    notify.set_geo_resolver(geo_lookup)
     threading.Thread(target=notify.report_worker, daemon=True).start()
     admin = db.get_admin()
     token_state = "启用" if (config.ALLOW_ADMIN_TOKEN and config.ADMIN_TOKEN) else "关闭"
@@ -102,6 +103,16 @@ def _whitelist() -> list:
         return nets
 
 
+def is_local_ip(ip: str) -> bool:
+    """本机 / 局域网地址：永远不封禁、不限流（避免把自己或内网设备锁在外面）。"""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return (addr.is_loopback or addr.is_private or addr.is_link_local
+            or addr.is_reserved or addr.is_unspecified)
+
+
 def is_whitelisted(ip: str) -> bool:
     try:
         addr = ipaddress.ip_address(ip)
@@ -149,7 +160,7 @@ def is_blacklisted(ip: str) -> bool:
 
 
 def is_banned(ip: str) -> tuple[bool, str]:
-    if is_whitelisted(ip):
+    if is_local_ip(ip) or is_whitelisted(ip):
         return False, ""
     try:
         row = db.ban_get(ip)
@@ -169,7 +180,7 @@ def ban_until_ts(ip: str) -> int:
 
 
 def ban_ip(ip: str, minutes: int, reason: str) -> None:
-    if is_whitelisted(ip):
+    if is_local_ip(ip) or is_whitelisted(ip):
         return
     db.ban_add(ip, minutes, reason)
     # 白名单/封禁变化后让缓存失效，即时生效
@@ -178,13 +189,17 @@ def ban_ip(ip: str, minutes: int, reason: str) -> None:
 
 
 def fire_webhook(event: str, message: str = "", **fields) -> None:
-    """按后台「通知」配置异步投递（见 notify.py）。"""
-    notify.fire(event, message or event, fields)
+    """按后台「通知」配置异步投递（见 notify.py）。
+
+    标题由 notify.EVENT_META 统一给，字段由 fields 拼成多行正文；
+    message 留空即可，非空时作为「说明」行的内容。
+    """
+    notify.fire(event, message, fields)
 
 
 def note_fail(ip: str) -> None:
     """登录失败计数，超阈值封禁（防爆破）。白名单 IP 不计数。"""
-    if is_whitelisted(ip):
+    if is_whitelisted(ip) or is_local_ip(ip):
         return
     now = time.time()
     fails = [t for t in _auth_fails[ip] if now - t < 600]
@@ -195,7 +210,8 @@ def note_fail(ip: str) -> None:
         minutes = max(1, int(s.get("auth_ban_minutes", "10")))
         ban_ip(ip, minutes, "auth brute force")
         _auth_fails.pop(ip, None)
-        fire_webhook("auth_brute_force", ip=ip, fails=len(fails), ban_minutes=minutes)
+        fire_webhook("auth_brute_force", "",
+                     ip=ip, fails=len(fails), ban_minutes=minutes)
         raise HTTPException(429, f"too many failures, banned {minutes}min")
 
 
@@ -203,7 +219,7 @@ def note_fail(ip: str) -> None:
 @app.middleware("http")
 async def rate_limit(request: Request, call_next):
     ip = client_ip(request)
-    if is_blacklisted(ip) and not is_whitelisted(ip):
+    if is_blacklisted(ip) and not is_whitelisted(ip) and not is_local_ip(ip):
         return JSONResponse({"error": "blocked by administrator"}, status_code=403)
     banned, reason = is_banned(ip)
     if banned:
@@ -212,15 +228,18 @@ async def rate_limit(request: Request, call_next):
             status_code=429)
     s = db.get_settings()
     limit = int(s.get("rate_limit", "0") or 0)
-    if request.url.path.startswith("/api/random") and limit > 0 and not is_whitelisted(ip):
+    if (request.url.path.startswith("/api/random") and limit > 0
+            and not is_whitelisted(ip) and not is_local_ip(ip)):
         now = time.time()
         window = [t for t in _rate_windows[ip] if now - t < 60]
         if len(window) >= limit:
             ban_minutes = max(1, int(s.get("rate_ban_minutes", "10")))
             ban_ip(ip, ban_minutes, "rate limit exceeded")
             _rate_windows.pop(ip, None)
-            fire_webhook("rate_limit", ip=ip, path=request.url.path,
-                         limit_per_minute=limit, ban_minutes=ban_minutes)
+            fire_webhook("rate_limit", "",
+                         ip=ip, path=request.url.path, limit_per_minute=limit,
+                         ban_minutes=ban_minutes,
+                         ua=(request.headers.get("user-agent") or "")[:120])
             return JSONResponse({"error": f"rate limited, banned {ban_minutes}min"},
                                 status_code=429)
         window.append(now)
@@ -245,7 +264,7 @@ def _bearer(authorization: str) -> str:
 
 def current_user(request: Request, authorization: str = Header(default="")) -> dict | None:
     ip = client_ip(request)
-    if is_blacklisted(ip) and not is_whitelisted(ip):
+    if is_blacklisted(ip) and not is_whitelisted(ip) and not is_local_ip(ip):
         raise HTTPException(403, "blocked by administrator")
     banned, reason = is_banned(ip)
     if banned:
@@ -515,8 +534,9 @@ def login(payload: dict, request: Request):
     _auth_fails.pop(ip, None)
     db.purge_expired_sessions()
     if user.get("role") == "admin" and db.get_setting("notify_admin_login") == "1":
-        fire_webhook("admin_login", f"管理员 {user['username']} 刚刚登录了后台",
-                     ip=ip, username=user["username"])
+        fire_webhook("admin_login", "",
+                     ip=ip, username=user["username"], role=user.get("role", "admin"),
+                     ua=(request.headers.get("user-agent") or "")[:120])
     return auth.make_session(user, bool(payload.get("remember")))
 
 
@@ -776,8 +796,9 @@ def put_settings(patch: dict, _: dict = Depends(require_admin)):
     zero_ok = {"comp_max_width", "comp_max_pixels", "comp_concurrency",
                "upload_max_mb", "new_user_quota_mb", "new_user_max_upload_mb",
                "new_user_daily", "new_user_weekly", "new_user_monthly", "rate_limit"}
-    switches = ("random_public", "notify_admin_login", "notify_daily",
-                "notify_weekly", "notify_monthly")
+    switches = ("random_public", "notify_admin_login", "notify_security",
+                "notify_ban", "notify_restore",
+                "notify_daily", "notify_weekly", "notify_monthly")
     clean = {}
     for k, v in (patch or {}).items():
         if k not in defaults:
@@ -1076,7 +1097,7 @@ def list_bans(_: dict = Depends(require_admin)):
 
 
 @app.post("/api/admin/bans")
-def add_ban(payload: dict, _: dict = Depends(require_admin)):
+def add_ban(payload: dict, request: Request, admin: dict = Depends(require_admin)):
     """手动封禁：{ip, minutes, reason}。minutes=0 表示永久（10 年）。"""
     ip = _norm_ip_pattern(payload.get("ip", ""))
     if "/" in ip:
@@ -1084,21 +1105,28 @@ def add_ban(payload: dict, _: dict = Depends(require_admin)):
     minutes = int(payload.get("minutes") or 0)
     minutes = 10 * 365 * 24 * 60 if minutes <= 0 else minutes
     reason = (payload.get("reason") or "manual ban").strip()[:120]
+    if is_local_ip(ip):
+        raise HTTPException(400, "本机 / 局域网地址不可封禁")
+    if ip == client_ip(request):
+        raise HTTPException(400, "不能封禁当前正在使用的 IP")
     if is_whitelisted(ip):
         raise HTTPException(400, "IP is in the whitelist, remove it first")
     db.ban_add(ip, minutes, reason)
-    fire_webhook("manual_ban", ip=ip, minutes=minutes, reason=reason)
     row = db.ban_get(ip)
+    fire_webhook("manual_ban", "", ip=ip, minutes=minutes, reason=reason,
+                 until=datetime.fromtimestamp(row["until_ts"], timezone.utc)
+                       .astimezone().strftime("%Y-%m-%d %H:%M"),
+                 operator=admin.get("username", "admin"))
     return {"ok": True, "ban": _ban_json(row) if row else None}
 
 
 @app.delete("/api/admin/bans/{ip}")
-def delete_ban(ip: str, _: dict = Depends(require_admin)):
+def delete_ban(ip: str, admin: dict = Depends(require_admin)):
     """手动解除封禁。"""
     ok = db.ban_remove(ip)
     if not ok:
         raise HTTPException(404, "not banned")
-    fire_webhook("manual_unban", ip=ip)
+    fire_webhook("manual_unban", "", ip=ip, operator=admin.get("username", "admin"))
     return {"ok": True, "ip": ip}
 
 
@@ -1132,6 +1160,12 @@ def add_blacklist(payload: dict, _: dict = Depends(require_admin)):
     """永久黑名单：{pattern, note}。命中即 403，直到手动移除。"""
     pattern = _norm_ip_pattern(payload.get("pattern", ""))
     note = (payload.get("note") or "").strip()[:120]
+    try:
+        net = ipaddress.ip_network(pattern, strict=False)
+    except ValueError:
+        net = None
+    if net and (net.is_private or net.is_loopback or net.is_link_local):
+        raise HTTPException(400, "本机 / 局域网网段不可加入黑名单")
     if is_whitelisted(pattern.split("/")[0]):
         raise HTTPException(400, "this IP is whitelisted, remove it from the whitelist first")
     db.blacklist_add(pattern, note)
@@ -1193,7 +1227,7 @@ def download_backup(_: dict = Depends(require_admin)):
 
 
 @app.post("/api/admin/restore")
-async def restore_backup(file: UploadFile = File(...), _: dict = Depends(require_admin)):
+async def restore_backup(file: UploadFile = File(...), admin: dict = Depends(require_admin)):
     """上传备份包恢复（覆盖数据库与图片）。恢复后所有会话失效，需要重新登录。"""
     if not (file.filename or "").lower().endswith(".zip"):
         raise HTTPException(400, "backup must be a .zip file")
@@ -1219,7 +1253,9 @@ async def restore_backup(file: UploadFile = File(...), _: dict = Depends(require
             os.remove(tmp)
         except OSError:
             pass
-    fire_webhook("restore", images=summary.get("images", 0))
+    fire_webhook("restore", "", images=summary.get("images", 0),
+                 files=summary.get("files_copied", 0),
+                 operator=admin.get("username", "admin"))
     return {"ok": True, "restored": summary, "relogin": True}
 
 

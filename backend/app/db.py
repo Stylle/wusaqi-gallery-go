@@ -153,6 +153,9 @@ DEFAULT_SETTINGS = {
     "notify_headers": "",           # 自定义请求头（JSON 对象字符串）
     "notify_body_tpl": "",          # 请求体模板（{{event}}/{{message}}/{{time}}/{{site}}），空 = 默认
     "notify_admin_login": "0",      # 1 = 管理员登录时通知
+    "notify_security": "1",         # 1 = 限流 / 防爆破告警
+    "notify_ban": "0",              # 1 = 手动封禁 / 解封操作
+    "notify_restore": "0",          # 1 = 备份恢复完成
     "notify_daily": "0",            # 1 = 每日汇报（PV/UV/上传数）
     "notify_daily_time": "09:00",   # 汇报时间（服务器本地时区 HH:MM）
     "notify_weekly": "0",           # 1 = 每周一报周报

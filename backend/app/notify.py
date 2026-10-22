@@ -24,6 +24,112 @@ DEFAULT_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 lolis-gallery/1.0")
 
 
+# 事件 → 开关键（None = 总是发送）
+EVENT_SWITCH = {
+    "admin_login": "notify_admin_login",
+    "rate_limit": "notify_security",
+    "auth_brute_force": "notify_security",
+    "manual_ban": "notify_ban",
+    "manual_unban": "notify_ban",
+    "restore": "notify_restore",
+    "test": None,
+}
+
+# 事件 → (emoji, 标题)
+EVENT_META = {
+    "test": ("🔔", "测试通知"),
+    "admin_login": ("🔐", "管理员登录"),
+    "rate_limit": ("⚠️", "随机图接口触发限流"),
+    "auth_brute_force": ("🛡️", "疑似暴力破解，已封禁"),
+    "manual_ban": ("🚫", "手动封禁 IP"),
+    "manual_unban": ("✅", "解除封禁"),
+    "restore": ("💾", "从备份恢复了站点数据"),
+    "daily_report": ("📊", "每日汇报"),
+    "weekly_report": ("📊", "每周报告"),
+    "monthly_report": ("📊", "每月报告"),
+}
+
+FIELD_LABELS = {
+    "ip": "IP", "geo": "归属地", "reason": "原因", "minutes": "封禁时长",
+    "ban_minutes": "封禁时长", "until": "解封时间", "operator": "操作人",
+    "username": "账号", "fails": "失败次数", "path": "接口",
+    "limit_per_minute": "限流阈值", "images": "图片数", "files": "文件数",
+    "ua": "User-Agent", "role": "角色",
+}
+
+
+_geo_resolver = None
+
+
+def set_geo_resolver(fn) -> None:
+    """注入 IP 归属地查询函数（main.geo_lookup），投递时在后台线程补全。"""
+    global _geo_resolver
+    _geo_resolver = fn
+
+
+def _fill_geo(ctx: dict) -> None:
+    if _geo_resolver and ctx.get("ip") and not ctx.get("geo"):
+        try:
+            ctx["geo"] = _geo_resolver(str(ctx["ip"]))
+        except Exception:
+            pass
+
+
+def is_enabled(event: str, s: dict | None = None) -> bool:
+    """该事件是否被后台开关允许投递（test 始终允许）。"""
+    key = EVENT_SWITCH.get(event)
+    if key is None:
+        return True
+    s = s or db.get_settings()
+    return s.get(key) == "1"
+
+
+def event_title(event: str) -> str:
+    emoji, title = EVENT_META.get(event, ("🔔", event))
+    return f"{emoji} {title}"
+
+
+def _fmt_minutes(v) -> str:
+    try:
+        m = int(v)
+    except (TypeError, ValueError):
+        return str(v)
+    if m >= 24 * 60 and m % (24 * 60) == 0:
+        return f"{m // (24 * 60)} 天"
+    if m >= 60 and m % 60 == 0:
+        return f"{m // 60} 小时"
+    return f"{m} 分钟"
+
+
+def build_text(event: str, ctx: dict) -> str:
+    """把事件字段拼成可读的多行消息（不止一句字符）。"""
+    title = event_title(event)
+    lines = [title, ""]
+    if ctx.get("site"):
+        lines.append(f"· 站点：{ctx['site']}")
+    if ctx.get("time"):
+        lines.append(f"· 时间：{ctx['time']}")
+    msg = (ctx.get("message") or "").strip()
+    # message 若以标题开头（如定时汇报自带标题），去掉重复的标题；
+    # 若与事件名相同（历史调用遗留），说明为空，直接丢弃，避免把内部事件名暴露给用户。
+    if msg.startswith(title):
+        msg = msg[len(title):].strip()
+    if msg == event:
+        msg = ""
+    if msg:
+        for i, ln in enumerate(msg.splitlines()):
+            lines.append(f"· 说明：{ln}" if i == 0 else f"  {ln}")
+    for k, v in ctx.items():
+        if k in ("site", "time", "message", "event", "title", "text", "fields"):
+            continue
+        if v is None or v == "":
+            continue
+        label = FIELD_LABELS.get(k, k)
+        val = _fmt_minutes(v) if k in ("minutes", "ban_minutes") else str(v)
+        lines.append(f"· {label}：{val}")
+    return "\n".join(lines)
+
+
 def render(tpl: str, ctx: dict) -> str:
     out = tpl
     for k, v in ctx.items():
@@ -35,6 +141,8 @@ def render(tpl: str, ctx: dict) -> str:
 def send(event: str, message: str, extra: dict | None = None) -> tuple[bool, str]:
     """按后台「通知」配置投递一条 webhook。返回 (ok, 错误信息)。"""
     s = db.get_settings()
+    if not is_enabled(event, s):
+        return True, ""            # 开关关闭：静默跳过（不算失败）
     url = (s.get("webhook_url") or "").strip()
     if not url.startswith(("http://", "https://")):
         return False, "未配置 Webhook URL"
@@ -45,9 +153,13 @@ def send(event: str, message: str, extra: dict | None = None) -> tuple[bool, str
         "site": s.get("site_title", "lolis-gallery"),
         "event": event,
         "message": message,
-        "time": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "time": datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S"),
+        "title": event_title(event),
         **(extra or {}),
     }
+    _fill_geo(ctx)
+    ctx["text"] = build_text(event, ctx)
+    ctx["fields"] = json.dumps(extra or {}, ensure_ascii=False)
     headers = {
         "Content-Type": "application/json",
         "User-Agent": DEFAULT_UA,
@@ -65,7 +177,7 @@ def send(event: str, message: str, extra: dict | None = None) -> tuple[bool, str
     if tpl:
         data = render(tpl, ctx).encode()
     elif body_type == "text":
-        data = message.encode()
+        data = ctx["text"].encode()
         headers["Content-Type"] = "text/plain; charset=utf-8"
     else:
         data = json.dumps(ctx, ensure_ascii=False).encode()

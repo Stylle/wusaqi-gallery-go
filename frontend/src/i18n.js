@@ -504,6 +504,22 @@ const EN = {
   '分': 'm',
   '秒': 's',
   '如：家里宽带 / 监控': 'e.g. home connection / monitoring',
+  '本机与局域网地址（127.0.0.1、192.168.x.x、10.x.x.x、172.16~31.x.x）不会被封禁，也不走限流，避免把自己锁在门外。': 'Local and LAN addresses (127.0.0.1, 192.168.x.x, 10.x.x.x, 172.16-31.x.x) are never banned or rate limited, so you cannot lock yourself out.',
+  '支持单个 IP 或网段（如 1.2.3.0/24、1.2.3.*）。命中即返回 403，直到手动移除；内网网段不允许加入，防止误封自己。': 'Single IP or CIDR (e.g. 1.2.3.0/24, 1.2.3.*). Matches get 403 until removed; private ranges are rejected to avoid locking yourself out.',
+  '本机 / 局域网地址不可封禁': 'Local / LAN addresses cannot be banned',
+  '不能封禁当前正在使用的 IP': 'You cannot ban the IP you are using right now',
+  '本机 / 局域网网段不可加入黑名单': 'Local / LAN ranges cannot be blacklisted',
+  '安全告警': 'Security alerts',
+  '触发随机图限流、疑似暴力破解并封禁时推送': 'Pushed when rate limits trip or brute force triggers a ban',
+  '封禁与解封': 'Bans & unbans',
+  '在后台手动封禁 / 解除某个 IP 时推送': 'Pushed when you manually ban or unban an IP',
+  '备份恢复完成': 'Restore finished',
+  '从备份包还原数据后推送一条记录': 'Pushed after data is restored from a backup',
+  '可用变量：{{title}} 标题、{{text}} 多行正文、{{event}} 事件名、{{time}} 时间、{{site}} 站点名、{{fields}} 附加字段 JSON，以及 {{ip}} {{geo}} {{reason}} 等具体字段': 'Variables: {{title}}, {{text}} (multi-line body), {{event}}, {{time}}, {{site}}, {{fields}} (JSON), plus event fields such as {{ip}}, {{geo}}, {{reason}}',
+  '通过 Webhook 推送事件：限流与防爆破告警、管理员登录、手动封禁/解封、备份恢复，以及每日 / 每周 / 每月体检报告。每条消息都带站点、时间、IP、归属地等明细，兼容企业微信、钉钉、飞书、Telegram Bot 等。': 'Push events to a webhook: rate-limit and brute-force alerts, admin sign-in, manual ban/unban, restores, plus daily / weekly / monthly reports. Every message carries site, time, IP and geo details; works with WeCom, DingTalk, Feishu, Telegram Bot and generic webhooks.',
+  '消息预览（实际推送内容，以「手动封禁」为例）': 'Message preview (what actually gets pushed, sample: manual ban)',
+  '当前 Body 格式为 Text：上面这段会原样作为请求体发送': 'Body format is Text: the block above is sent as the raw request body',
+  '当前 Body 格式为 JSON：上面这段放在 text 字段里，同时附带 ip / geo / reason 等独立字段，方便对方系统解析': 'Body format is JSON: the block above goes into the text field, alongside standalone ip / geo / reason fields for easy parsing',
 }
 
 // 带变量的后端消息（正则 + 取值函数）

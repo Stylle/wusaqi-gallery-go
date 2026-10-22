@@ -1103,3 +1103,19 @@ button.danger { color: var(--err); }
 
 /* 名单表格里的说明列不要撑开 */
 .table-scroll .user-table td { word-break: break-word; }
+
+/* 通知消息预览：模拟聊天窗口里收到的那条消息 */
+.notify-preview {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 8px;
+  border: 0.5px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
