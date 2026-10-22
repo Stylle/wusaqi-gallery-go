@@ -76,6 +76,7 @@ const groups = [
 ]
 
 const active = ref('site')
+const menuOpen = ref(false)
 const s = ref(null)
 const msg = ref('')
 const msgBad = ref(false)
@@ -592,11 +593,18 @@ const notifyPreview = computed(() => {
   <template v-else>
     <h2 class="page-title">{{ t('后台配置') }}</h2>
     <div class="admin-layout" v-if="s">
-      <aside class="admin-tree">
+      <!-- 手机端：抽屉菜单按钮 + 遮罩 -->
+      <button class="admin-menu-btn" @click="menuOpen = true">☰ {{ t('配置菜单') }}</button>
+      <div class="admin-backdrop" v-if="menuOpen" @click="menuOpen = false"></div>
+      <aside class="admin-tree" :class="{ open: menuOpen }">
+        <div class="admin-tree-head">
+          <span>{{ t('配置菜单') }}</span>
+          <button class="admin-tree-close" @click="menuOpen = false">✕</button>
+        </div>
         <div class="group" v-for="g in groups" :key="g.title">
           <div class="group-title">{{ t(g.title) }}</div>
           <button v-for="it in g.items" :key="it.id" class="item" :class="{ on: active === it.id }"
-            @click="active = it.id">{{ t(it.label) }}</button>
+            @click="active = it.id; menuOpen = false">{{ t(it.label) }}</button>
         </div>
       </aside>
 

@@ -426,6 +426,9 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 }
 .admin-tree .item:hover { background: var(--surface-hover); transform: none; box-shadow: none; }
 .admin-tree .item.on { background: var(--grad-accent); color: #fff; }
+
+/* 手机端抽屉控件：桌面隐藏 */
+.admin-menu-btn, .admin-backdrop, .admin-tree-head { display: none; }
 .admin-content .row {
   display: flex;
   gap: 14px;
@@ -782,22 +785,79 @@ button.danger { color: var(--err); }
   .ctxmenu { min-width: 0; width: min(220px, 92vw); }
   .ctxmenu button { padding: 11px 12px; }
 
-  /* ---------- 后台：左树变顶部横向滚动条 ---------- */
-  .admin-layout { flex-direction: column; gap: 14px; }
-  .admin-tree {
-    position: static;
-    width: 100%;
-    min-width: 0;
+  /* ---------- 后台：左树变抽屉侧边栏 ---------- */
+  .admin-layout { flex-direction: column; gap: 12px; }
+  .admin-menu-btn {
     display: flex;
-    gap: 6px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    padding: 8px;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 44px;
+    background: var(--surface);
+    color: var(--text);
+    border: 0.5px solid var(--border);
+    font-size: 14.5px;
+    position: sticky;
+    top: 60px;
+    z-index: 6;
+    backdrop-filter: blur(8px);
   }
-  .admin-tree .group { display: flex; gap: 6px; margin: 0; }
-  .admin-tree .group-title { display: none; }
-  .admin-tree .item { white-space: nowrap; width: auto; padding: 7px 13px; font-size: 13px; }
-  .admin-content { padding: 16px 14px; }
+  .admin-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(13, 17, 23, 0.55);
+    backdrop-filter: blur(2px);
+    z-index: 78;
+    animation: fadein 0.2s;
+  }
+  .admin-tree {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: min(78vw, 300px);
+    min-width: 0;
+    max-height: none;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 0 10px calc(16px + env(safe-area-inset-bottom));
+    border-radius: 0;
+    border-top: none;
+    border-bottom: none;
+    border-left: none;
+    background: var(--surface-solid);
+    z-index: 80;
+    transform: translateX(-105%);
+    transition: transform 0.25s ease;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+  .admin-tree.open { transform: translateX(0); box-shadow: var(--shadow); }
+  .admin-tree-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    padding: 14px 6px 10px;
+    font-size: 15px;
+    font-weight: 500;
+    background: var(--surface-solid);
+    z-index: 1;
+  }
+  .admin-tree-close {
+    background: none;
+    color: var(--muted);
+    padding: 6px 10px;
+    font-size: 15px;
+    box-shadow: none;
+  }
+  .admin-tree .group { display: block; gap: 0; margin: 6px 0; }
+  .admin-tree .group-title { display: block; }
+  .admin-tree .item { white-space: normal; width: 100%; padding: 12px 14px; font-size: 14.5px; margin: 2px 0; }
+  .admin-content { padding: 16px 14px; width: 100%; max-width: 100%; }
 
   /* ---------- 上传 ---------- */
   .upload-head { flex-direction: column; align-items: stretch; gap: 4px; }
@@ -1022,19 +1082,10 @@ button.danger { color: var(--err); }
   .panel { padding: 14px 12px; margin-top: 14px; }
   .panel-title { font-size: 12px; }
 
-  /* 左侧树变顶部横向 chips：分组之间用竖线分隔 */
-  .admin-tree {
-    scrollbar-width: thin;
-    padding: 6px;
-    gap: 4px;
-    border-radius: 9px;
-  }
-  .admin-tree .group { gap: 6px; }
-  .admin-tree .group + .group {
-    border-left: 0.5px solid var(--border);
-    padding-left: 6px;
-  }
-  .admin-tree .item { padding: 8px 13px; font-size: 13px; margin: 0; }
+  /* 抽屉里的分组恢复纵向排布 */
+  .admin-tree .group { gap: 0; }
+  .admin-tree .group + .group { border-left: none; padding-left: 0; }
+  .admin-tree .item { padding: 12px 14px; font-size: 14.5px; margin: 2px 0; }
 
   /* 表格横向滚动时右侧淡出，提示还有列 */
   .table-scroll { position: relative; }
@@ -1082,7 +1133,8 @@ button.danger { color: var(--err); }
 @media (max-width: 420px) {
   .stats-cards { grid-template-columns: 1fr 1fr; }
   .profile-grid { grid-template-columns: 1fr; }
-  .admin-tree .item { font-size: 12px; padding: 6px 10px; }
+  .admin-tree { width: 84vw; }
+  .admin-tree .item { font-size: 14px; padding: 11px 12px; }
 }
 
 /* ---------- 备份与恢复：文件选择（隐藏原生 input，做成按钮外观） ---------- */
