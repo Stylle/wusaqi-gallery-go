@@ -921,41 +921,163 @@ def _clamp(v: int, lo: int, hi: int) -> int:
     return max(lo, min(hi, int(v)))
 
 
+# ---------- 本地导入：后台任务 + 持久失败队列 ----------
+# 设计：点一次「导入」= 后台线程全量清空待导入（内部固定分批，避免长请求超时）；
+# 单轮内失败自动重试，仍失败的进入持久化队列，下次导入自动优先重试。
+
+_IMPORT_BATCH = 20                      # 内部固定分批大小（写死，不暴露配置）
+_IMPORT_RETRIES = 2                     # 单轮任务内每张失败图的自动重试次数
+_IMPORT_FAILED_KEY = "local_import_failed"   # 持久化失败队列（存 settings 表）
+
+_import_state: dict = {
+    "running": False, "cancel": False,
+    "total": 0, "done": 0, "imported": 0, "failed": 0, "retried": 0,
+    "queueSize": 0, "current": "",
+    "startedAt": "", "finishedAt": "", "errors": [],   # errors 最多保留 20 条
+}
+_import_lock = threading.Lock()
+
+
+def _failed_queue() -> list[dict]:
+    try:
+        return json.loads(db.get_setting(_IMPORT_FAILED_KEY, "") or "[]")
+    except Exception:
+        return []
+
+
+def _save_failed_queue(items: list[dict]) -> None:
+    db.update_settings({_IMPORT_FAILED_KEY: json.dumps(items, ensure_ascii=False)})
+
+
+def _import_worker(user_id: str) -> None:
+    try:
+        admin = db.get_user(user_id) or db.get_admin()
+        lim = limits_for(admin)
+        old_queue = {f["key"]: f for f in _failed_queue()}
+
+        known = db.all_keys()
+        scanned, pending = _local_pending(known)
+        ok_items = [p for p in pending if p["ok"]]
+
+        with _import_lock:
+            _import_state.update(running=True, cancel=False, total=len(ok_items),
+                                 done=0, imported=0, failed=0, retried=0,
+                                 queueSize=len(old_queue), errors=[], finishedAt="")
+
+        # 第一轮：分批全量导入
+        done, imported, failures = 0, 0, []
+        for i in range(0, len(ok_items), _IMPORT_BATCH):
+            if _import_state["cancel"]:
+                break
+            for p in ok_items[i:i + _IMPORT_BATCH]:
+                if _import_state["cancel"]:
+                    break
+                with _import_lock:
+                    _import_state["current"] = p["key"]
+                try:
+                    _import_one(os.path.join(config.UPLOADS_DIR, p["key"]),
+                                p["key"], admin, lim)
+                    imported += 1
+                except Exception as e:
+                    prev = old_queue.get(p["key"], {}).get("attempts", 0)
+                    failures.append({"key": p["key"], "error": str(e)[:200],
+                                     "attempts": prev + 1})
+                done += 1
+                with _import_lock:
+                    _import_state.update(done=done, imported=imported,
+                                         failed=len(failures))
+
+        # 自动重试轮：失败图立即再试 _IMPORT_RETRIES 次
+        for _ in range(_IMPORT_RETRIES):
+            if not failures or _import_state["cancel"]:
+                break
+            with _import_lock:
+                _import_state["retried"] += len(failures)
+            still = []
+            for f in failures:
+                if _import_state["cancel"]:
+                    still.append(f)
+                    continue
+                with _import_lock:
+                    _import_state["current"] = f["key"]
+                try:
+                    _import_one(os.path.join(config.UPLOADS_DIR, f["key"]),
+                                f["key"], admin, lim)
+                    imported += 1
+                except Exception as e:
+                    f["error"] = str(e)[:200]
+                    f["attempts"] += 1
+                    still.append(f)
+            failures = still
+            with _import_lock:
+                _import_state.update(imported=imported, failed=len(failures))
+
+        # 仍失败的 → 持久化队列（历史队列里文件已消失/已入库的顺带清掉）
+        final_queue = failures
+        with _import_lock:
+            _import_state.update(queueSize=len(final_queue), finishedAt=datetime
+                                 .now(timezone.utc).isoformat(timespec="seconds"),
+                                 running=False, current="")
+        _save_failed_queue(final_queue)
+    except Exception as e:                      # 兜底：任务线程绝不能无声死掉
+        with _import_lock:
+            _import_state.update(running=False, current="", finishedAt=datetime
+                                 .now(timezone.utc).isoformat(timespec="seconds"))
+            _import_state["errors"].append(f"任务异常: {e}"[:200])
+
+
 @app.get("/api/admin/local/scan")
 def local_scan(dry_run: bool = True, limit: int = 50,
                admin: dict = Depends(require_admin)):
-    """扫描 data/uploads：库里没有的原图 → 导入并归属管理员。
-
-    dry_run=true（默认）只预览不写库；dry_run=false 按 limit 分批导入，可反复调用。
-    """
-    limit = _clamp(limit, 1, 200)
+    """扫描 data/uploads 预览（只读不写库）。导入请用 POST /api/admin/local/import。"""
+    if not dry_run:
+        raise HTTPException(400, "同步导入已移除：请使用 POST /api/admin/local/import（后台任务）")
     known = db.all_keys()
     scanned, pending = _local_pending(known)
     ok_items = [p for p in pending if p["ok"]]
     bad_items = [p for p in pending if not p["ok"]]
 
-    imported, failed = 0, []
-    if not dry_run:
-        lim = limits_for(admin)
-        for p in ok_items[:limit]:
-            try:
-                _import_one(os.path.join(config.UPLOADS_DIR, p["key"]), p["key"], admin, lim)
-                imported += 1
-            except Exception as e:
-                failed.append({"key": p["key"], "error": str(e)})
-
     return {
-        "dryRun": dry_run,
+        "dryRun": True,
         "scanned": scanned,                 # 目录里文件总数
         "indexed": len(known),              # 已在库
         "pendingCount": len(ok_items),      # 待导入（可导入）
         "invalidCount": len(bad_items),     # 无法导入（非图片等）
         "pending": ok_items[:limit],
         "invalid": bad_items[:limit],
-        "imported": imported,
-        "failed": failed,
-        "remaining": max(0, len(ok_items) - imported),
     }
+
+
+@app.post("/api/admin/local/import")
+def local_import_start(admin: dict = Depends(require_admin)):
+    """启动后台全量导入任务：新扫描 + 历史失败队列自动重试。进行中返回 409。"""
+    if _import_state["running"]:
+        raise HTTPException(409, "导入任务进行中")
+    with _import_lock:
+        _import_state["startedAt"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    threading.Thread(target=_import_worker, args=(admin["id"],),
+                     daemon=True, name="local-import").start()
+    return {"started": True}
+
+
+@app.get("/api/admin/local/status")
+def local_import_status(_: dict = Depends(require_admin)):
+    """导入任务进度（前端轮询）。queue 始终以库里的持久队列为准。"""
+    with _import_lock:
+        state = {**_import_state}
+    state["queueSize"] = len(_failed_queue())
+    state["queue"] = _failed_queue()[:50]     # 失败明细（key/错误/尝试次数）
+    return state
+
+
+@app.post("/api/admin/local/import/cancel")
+def local_import_cancel(_: dict = Depends(require_admin)):
+    """请求取消当前导入任务（分批间隙生效，已在处理的张数不受影响）。"""
+    if not _import_state["running"]:
+        return {"ok": False, "message": "没有进行中的任务"}
+    with _import_lock:
+        _import_state["cancel"] = True
+    return {"ok": True}
 
 
 @app.post("/api/admin/local/compress")
@@ -1027,20 +1149,12 @@ def local_compress(dry_run: bool = True, limit: int = 5,
 
 @app.post("/api/admin/reindex")
 def reindex(admin: dict = Depends(require_admin)):
-    """v4 兼容别名：等价于「本地图库导入」全量执行一次。"""
-    known = db.all_keys()
-    scanned, pending = _local_pending(known)
-    lim = limits_for(admin)
-    added = 0
-    for p in pending:
-        if not p["ok"]:
-            continue
-        try:
-            _import_one(os.path.join(config.UPLOADS_DIR, p["key"]), p["key"], admin, lim)
-            added += 1
-        except Exception:
-            continue
-    return {"scanned": scanned, "added": added}
+    """v4 兼容别名：等价于启动一次后台全量导入（含失败队列重试）。"""
+    if _import_state["running"]:
+        return {"started": False, "message": "导入任务进行中"}
+    threading.Thread(target=_import_worker, args=(admin["id"],),
+                     daemon=True, name="local-import").start()
+    return {"started": True}
 
 
 def _norm_ip_pattern(raw: str) -> str:

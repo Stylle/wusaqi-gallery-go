@@ -118,6 +118,14 @@ export const scanLocal = (token, dryRun = true, limit = 50) =>
     method: 'GET', headers: auth(token),
   }).then(json)
 
+// 本地图库：后台全量导入任务（一次点按清空全部待导入 + 失败队列自动重试）
+export const startLocalImport = (token) =>
+  fetch('/api/admin/local/import', { method: 'POST', headers: auth(token) }).then(json)
+export const localImportStatus = (token) =>
+  fetch('/api/admin/local/status', { headers: auth(token) }).then(json)
+export const cancelLocalImport = (token) =>
+  fetch('/api/admin/local/import/cancel', { method: 'POST', headers: auth(token) }).then(json)
+
 // 补生成缺失的压缩版/缩略图（limit = 单次张数，低配机器建议 3~5）
 export const compressLocal = (token, dryRun = true, limit = 5) =>
   fetch(`/api/admin/local/compress?dry_run=${dryRun}&limit=${limit}`, {

@@ -1,9 +1,10 @@
 <script setup>
-import { ref, onMounted, watch, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import {
   getSettings, saveSettings, getBans, getPublicSettings, getSystem,
   listUsers, createUser, updateUser, deleteUser, fmtSize,
-  scanLocal, compressLocal, getStats, testNotify,
+  scanLocal, startLocalImport, localImportStatus, cancelLocalImport,
+  compressLocal, getStats, testNotify,
   banIp, unbanIp, addWhitelist, removeWhitelist, addBlacklist, removeBlacklist,
   getBackupStats, downloadBackup, restoreBackup,
 } from '../api.js'
@@ -116,7 +117,8 @@ const editing = ref('')     // 空 = 新建
 const localInfo = ref(null)
 const localMsg = ref('')
 const localBusy = ref(false)
-const importLimit = ref(20)
+const localJob = ref(null)          // 后台导入任务进度（轮询）
+let localTimer = null
 const compLimit = ref(5)
 const compInfo = ref(null)
 const compMsg = ref('')
@@ -195,18 +197,44 @@ async function previewLocal() {
 
 async function doImport() {
   localBusy.value = true
-  localMsg.value = t('导入中（会生成缩略图与压缩版，请稍候）…')
+  localMsg.value = t('导入任务已启动…')
   try {
-    const d = await scanLocal(store.token, false, importLimit.value)
-    await previewLocal()
-    const extra = d.failed.length ? `，${t('失败')} ${d.failed.length} ` + t('张') : ''
-    localMsg.value = `${t('本次导入')} ${d.imported} ${t('张')}${extra}，${t('剩余')} ${d.remaining} ${t('张')}`
-    await refreshMe()
+    await startLocalImport(store.token)
+    clearInterval(localTimer)
+    localTimer = setInterval(pollImport, 1500)
+    await pollImport()
   } catch (e) {
-    localMsg.value = t('失败：') + e.message
-  } finally {
     localBusy.value = false
+    localMsg.value = t('失败：') + errText(e)
   }
+}
+
+async function pollImport() {
+  try {
+    const j = await localImportStatus(store.token)
+    localJob.value = j
+    if (j.running) {
+      const pct = j.total ? Math.round((j.done / j.total) * 100) : 0
+      localMsg.value = `${t('导入中')} ${j.done}/${j.total}（${pct}%）`
+      return
+    }
+    clearInterval(localTimer)
+    localTimer = null
+    localBusy.value = false
+    if (j.startedAt) {                    // 跑过至少一轮才汇报结果
+      const extra = j.failed ? `，${t('失败')} ${j.failed} ${t('张（已进入重试队列）')}` : ''
+      const retried = j.retried ? `，${t('自动重试')} ${j.retried} ${t('次')}` : ''
+      localMsg.value = j.cancel
+        ? `${t('已取消：已导入')} ${j.imported} ${t('张')}${extra}`
+        : `${t('导入完成')} ${j.imported} ${t('张')}${retried}${extra}`
+    }
+    await previewLocal()
+    await refreshMe()
+  } catch { /* 轮询偶发失败，等下一轮 */ }
+}
+
+async function stopImport() {
+  try { await cancelLocalImport(store.token) } catch { /* 已结束则忽略 */ }
 }
 
 async function previewCompress() {
@@ -285,7 +313,18 @@ onMounted(async () => {
   loadStats()
   previewLocal()
   previewCompress()
+  // 若有导入任务在跑（刷新页面后回来），无缝接上进度轮询
+  localImportStatus(store.token).then((j) => {
+    if (j.running) {
+      localJob.value = j
+      localBusy.value = true
+      clearInterval(localTimer)
+      localTimer = setInterval(pollImport, 1500)
+    }
+  }).catch(() => {})
 })
+
+onUnmounted(() => { if (localTimer) clearInterval(localTimer) })
 
 // 切换左侧菜单时清掉上一页残留的提示，否则旧的「失败：…」会一直挂在新面板上
 watch(active, (id) => {
@@ -950,17 +989,36 @@ const notifyPreview = computed(() => {
           <div class="panel">
             <h3 style="font-size:14px">{{ t('扫描本地原图') }}</h3>
             <p class="muted" style="margin-top:0">{{ localMsg || t('尚未扫描') }}</p>
+
+            <!-- 导入进行中：进度条 -->
+            <div v-if="localJob?.running" style="margin:10px 0">
+              <div style="height:8px;border-radius:4px;background:var(--surface-hover);overflow:hidden">
+                <div :style="`height:100%;width:${localJob.total ? Math.round(localJob.done / localJob.total * 100) : 0}%;background:var(--grad-accent);transition:width .5s`"></div>
+              </div>
+              <p class="muted" style="margin:6px 0 0;font-size:12px">
+                {{ localJob.current }}
+              </p>
+            </div>
+
             <div class="row" style="margin:0">
               <button class="ghost" :disabled="localBusy" @click="previewLocal">{{ t('重新扫描') }}</button>
-              <label class="muted" style="display:flex;align-items:center;gap:6px">
-                {{ t('每次导入') }}
-                <input v-model.number="importLimit" type="number" min="1" max="200"
-                  style="width:76px" /> {{ t('张') }}
-              </label>
-              <button :disabled="localBusy || !localInfo?.pendingCount" @click="doImport">
-                {{ t('导入') }} {{ Math.min(importLimit, localInfo?.pendingCount || 0) }} {{ t('张') }}
+              <button :disabled="localBusy" @click="doImport">
+                {{ t('一键导入全部') }}{{ localInfo?.pendingCount ? `（${localInfo.pendingCount}）` : '' }}
               </button>
+              <button v-if="localJob?.running" class="ghost" @click="stopImport">{{ t('停止') }}</button>
             </div>
+
+            <p class="hint muted" v-if="localJob && !localJob.running && (localJob.failed > 0 || localJob.queueSize > 0)">
+              {{ t('失败自动重试队列') }}：{{ t('共') }} {{ localJob.queueSize }} {{ t('张，下次导入时自动优先重试。') }}
+            </p>
+            <details v-if="localJob?.queue?.length" style="margin-top:8px">
+              <summary class="muted" style="cursor:pointer;font-size:12.5px">
+                {{ t('查看失败明细') }}（{{ localJob.queueSize }}）
+              </summary>
+              <div v-for="f in localJob.queue" :key="f.key" class="mono muted" style="font-size:11.5px">
+                {{ f.key }} — {{ f.error }}（{{ t('已尝试') }} {{ f.attempts }} {{ t('次') }}）
+              </div>
+            </details>
 
             <div v-if="localInfo?.pending?.length" class="table-scroll" style="margin-top:12px">
               <table class="user-table">
@@ -1100,9 +1158,12 @@ POST /api/admin/notify/test   {{ t('按「通知」配置发一条测试消息')
   notify_weekly, notify_monthly</pre>
 
           <h3>{{ t('本地图库（管理员）') }}</h3>
-          <pre>GET  /api/admin/local/scan?dry_run=true&amp;limit=50
+          <pre>GET  /api/admin/local/scan?dry_run=true&amp;limit=50     {{ t('预览（只读）') }}
+POST /api/admin/local/import            {{ t('启动后台全量导入（含失败队列重试）') }}
+GET  /api/admin/local/status            {{ t('导入进度轮询') }}
+POST /api/admin/local/import/cancel     {{ t('取消进行中的导入') }}
 POST /api/admin/local/compress?dry_run=true&amp;limit=5
-POST /api/admin/reindex    v4 {{ t('兼容别名，等价于全量扫描导入') }}</pre>
+POST /api/admin/reindex    v4 {{ t('兼容别名，等价于启动后台导入') }}</pre>
 
           <h3>{{ t('用法示例') }}</h3>
           <pre># {{ t('登录拿 token') }}
