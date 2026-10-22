@@ -1,15 +1,24 @@
 // 纯 fetch 封装：token 由调用方显式传入，避免与 auth.js 循环依赖
-const json = async (res) => {
+
+// 全局 401 通知：由 App.vue 注册，用于提示「登录已失效」
+let unauthHandler = null
+export const setUnauthHandler = (fn) => { unauthHandler = fn }
+
+const json = async (res, opts = {}) => {
   if (!res.ok) {
     const d = await res.json().catch(() => ({}))
     const err = new Error(d.detail || d.error || res.statusText)
     err.status = res.status
+    if (res.status === 401 && !opts.noUnauth && unauthHandler) {
+      try { unauthHandler(err) } catch { /* 忽略回调异常 */ }
+    }
     throw err
   }
   return res.json()
 }
 
-const auth = (token) => ({ Authorization: `Bearer ${token || ''}` })
+// 没 token 就不要发空的 "Bearer "（后端会当成匿名 → 401 login required）
+const auth = (token) => (token ? { Authorization: `Bearer ${token}` } : {})
 
 // ---------- 站点 ----------
 export const getPublicSettings = () =>
@@ -29,7 +38,7 @@ export const login = (username, password, remember) =>
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password, remember: !!remember }),
-  }).then(json)
+  }).then(r => json(r, { noUnauth: true }))   // 密码输错不算「会话失效」
 
 export const logout = (token) =>
   fetch('/api/auth/logout', { method: 'POST', headers: auth(token) }).then(json)

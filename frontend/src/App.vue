@@ -8,10 +8,10 @@ import Login from './views/Login.vue'
 import LockGate from './components/LockGate.vue'
 import { theme, setTheme } from './theme.js'
 import {
-  store, ui, isAdmin, checkAuth, loadSite, doLogout, setViewSize,
+  store, ui, isAdmin, ensureAuth, loadSite, doLogout, setViewSize, clearToken,
 } from './auth.js'
 import { site } from './site.js'
-import { changePassword, fmtSize } from './api.js'
+import { changePassword, fmtSize, setUnauthHandler } from './api.js'
 import { i18n, t, setLang } from './i18n.js'
 
 const views = {
@@ -27,7 +27,18 @@ const pwdOpen = ref(false)
 const pwdMsg = ref('')
 const pwdForm = ref({ old: '', new: '' })
 
-const isLocked = computed(() => locked[route.value] && !store.ok)
+// 校验中（有 token 但还没验完）不闪锁屏：交给页面内的 ensureAuth 处理
+const isLocked = computed(() =>
+  !!locked[route.value] && !store.ok && (store.checked || !store.token))
+
+// 全局「登录已失效」提示
+const authNotice = ref('')
+let noticeTimer = null
+function showAuthNotice(text) {
+  authNotice.value = text
+  clearTimeout(noticeTimer)
+  noticeTimer = setTimeout(() => { authNotice.value = '' }, 4000)
+}
 const usedPct = computed(() => {
   const u = store.user
   if (!u || !u.quotaMb) return 0
@@ -68,12 +79,23 @@ function toggleLang() {
 
 function onDocClick() { menuOpen.value = false; navOpen.value = false }
 
+// 当前是否还持有 token（401 回调里用来区分「会话过期」和「密码输错」）
+function readTokenExists() {
+  return !!(localStorage.getItem('lg_token') || sessionStorage.getItem('lg_token') || store.token)
+}
+
 onMounted(() => {
   sync()
   window.addEventListener('hashchange', sync)
   document.addEventListener('click', onDocClick)
   loadSite()
-  checkAuth()
+  // 任意请求返回 401 → 提示并回到未登录态（登录页输错密码不算）
+  setUnauthHandler(() => {
+    if (!readTokenExists()) return
+    clearToken()
+    showAuthNotice(t('登录已失效，请重新登录'))
+  })
+  ensureAuth()
 })
 onUnmounted(() => {
   window.removeEventListener('hashchange', sync)
@@ -144,6 +166,11 @@ onUnmounted(() => {
   </main>
 
   <footer class="site-footer" v-if="site.site_footer">{{ site.site_footer }}</footer>
+
+  <div v-if="authNotice" class="auth-notice" @click="authNotice = ''">
+    {{ authNotice }}
+    <a href="#/login">{{ t('去登录') }}</a>
+  </div>
 
   <!-- 修改密码 -->
   <div v-if="pwdOpen" class="lightbox" @click.self="pwdOpen = false">

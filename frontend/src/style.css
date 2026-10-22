@@ -846,3 +846,45 @@ button.danger { color: var(--err); }
   color: var(--text);
   resize: vertical;
 }
+
+/* ---------- 操作反馈：后台 toast / 登录失效横幅 ---------- */
+.admin-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 24px;
+  z-index: 300;
+  max-width: min(420px, calc(100vw - 40px));
+  padding: 11px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #fff;
+  background: #2f9e68;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .22);
+  animation: toast-in .18s ease-out;
+}
+.admin-toast.bad { background: #c0392b; }
+
+.auth-notice {
+  position: fixed;
+  left: 50%;
+  top: 14px;
+  transform: translateX(-50%);
+  z-index: 400;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: #fff;
+  background: #c0392b;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .22);
+  cursor: pointer;
+}
+.auth-notice a { color: #fff; text-decoration: underline; font-weight: 600; }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}

@@ -1,13 +1,19 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import {
   getSettings, saveSettings, getBans, getPublicSettings, getSystem,
   listUsers, createUser, updateUser, deleteUser, fmtSize,
   scanLocal, compressLocal, getStats, testNotify,
 } from '../api.js'
-import { store, isAdmin, refreshMe } from '../auth.js'
+import { store, isAdmin, refreshMe, ensureAuth } from '../auth.js'
 import { setSite } from '../site.js'
 import { t } from '../i18n.js'
+
+// 统一的错误文案：401 不再裸露 "login required"
+function errText(e) {
+  if (e && e.status === 401) return t('登录已失效，请重新登录')
+  return e?.message || String(e)
+}
 
 const groups = [
   { title: '站点信息', items: [
@@ -65,6 +71,16 @@ const groups = [
 const active = ref('site')
 const s = ref(null)
 const msg = ref('')
+const saveBusy = ref(false)
+const toast = ref(null)
+let toastTimer = null
+function showToast(text, ok = true) {
+  toast.value = { text, ok }
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => { toast.value = null }, 3200)
+}
+const toastText = computed(() => toast.value?.text || '')
+const toastOk = computed(() => toast.value?.ok !== false)
 const bans = ref([])
 const users = ref([])
 const uMsg = ref('')
@@ -118,7 +134,7 @@ async function loadStats() {
   statsBusy.value = true
   statsMsg.value = ''
   try { stats.value = await getStats(store.token) }
-  catch (e) { statsMsg.value = t('失败：') + e.message }
+  catch (e) { statsMsg.value = t('失败：') + errText(e) }
   finally { statsBusy.value = false }
 }
 
@@ -127,9 +143,12 @@ async function sendTestNotify() {
   notifyMsg.value = t('发送中…')
   try {
     const d = await testNotify(store.token)
-    notifyMsg.value = d.ok ? t('测试通知已发送，请查收 ✓') : `${t('失败：')}${d.error}`
-  } catch (e) { notifyMsg.value = t('失败：') + e.message }
-  finally { notifyBusy.value = false }
+    notifyMsg.value = d.ok ? t('测试通知已发送，请查收 ✓') : `${t('失败：')}${d.error || t('未知错误')}`
+    showToast(notifyMsg.value, d.ok)
+  } catch (e) {
+    notifyMsg.value = t('失败：') + errText(e)
+    showToast(t('发送失败 ✗'), false)
+  } finally { notifyBusy.value = false }
 }
 
 async function previewLocal() {
@@ -220,9 +239,17 @@ const myQuota = computed(() => {
 })
 
 onMounted(async () => {
+  // 等登录校验完成再发请求：子组件的 onMounted 早于 App 的，直接发会带空 token → 401
+  await ensureAuth()
+  if (!store.token) { msg.value = t('登录已失效，请重新登录'); return }
   await refreshMe()
   if (!isAdmin.value) return
-  s.value = await getSettings(store.token)
+  try {
+    s.value = await getSettings(store.token)
+  } catch (e) {
+    msg.value = t('失败：') + errText(e)
+    return
+  }
   loadSystem()
   loadBans()
   loadUsers()
@@ -231,22 +258,40 @@ onMounted(async () => {
   previewCompress()
 })
 
+// 切换左侧菜单时清掉上一页残留的提示，否则旧的「失败：…」会一直挂在新面板上
+watch(active, () => {
+  msg.value = ''
+  notifyMsg.value = ''
+  localMsg.value = ''
+  compMsg.value = ''
+  statsMsg.value = ''
+})
+
 async function loadBans() {
   try { bans.value = (await getBans(store.token)).bans } catch { }
 }
 
 async function loadUsers() {
-  try { users.value = (await listUsers(store.token)).users } catch (e) { uMsg.value = e.message }
+  try { users.value = (await listUsers(store.token)).users } catch (e) { uMsg.value = errText(e) }
 }
 
 async function save() {
+  if (saveBusy.value) return
+  if (!store.token) { msg.value = t('登录已失效，请重新登录'); showToast(msg.value, false); return }
+  saveBusy.value = true
   msg.value = t('保存中…')
   try {
     s.value = await saveSettings(store.token, s.value)
     setSite(await getPublicSettings())
     await loadSystem()
     msg.value = t('已保存 ✓（压缩方案对新上传生效）')
-  } catch (e) { msg.value = t('失败：') + e.message }
+    showToast(t('设置已保存 ✓'))
+  } catch (e) {
+    msg.value = t('失败：') + errText(e)
+    showToast(msg.value, false)
+  } finally {
+    saveBusy.value = false
+  }
 }
 
 function editUser(u) {
@@ -450,7 +495,7 @@ const tplHint = computed(() =>
           </template>
 
           <div class="row" style="margin-top:16px">
-            <button @click="save">{{ t('保存并应用') }}</button>
+            <button :disabled="saveBusy" @click="save">{{ saveBusy ? t('保存中…') : t('保存并应用') }}</button>
             <span class="muted">{{ msg }}</span>
           </div>
 
@@ -610,7 +655,7 @@ const tplHint = computed(() =>
           </div>
 
           <div class="row" style="margin-top:14px">
-            <button @click="save">{{ t('保存全部设置') }}</button>
+            <button :disabled="saveBusy" @click="save">{{ saveBusy ? t('保存中…') : t('保存全部设置') }}</button>
             <button class="ghost" :disabled="notifyBusy" @click="sendTestNotify">{{ t('发送测试') }}</button>
             <span class="muted">{{ notifyMsg || msg }}</span>
           </div>
@@ -931,7 +976,7 @@ curl -H "Authorization: Bearer $TOKEN" \
           <p class="hint muted" v-if="currentGroup()?.hint">{{ t(currentGroup().hint) }}</p>
 
           <div class="row" style="margin-top:18px">
-            <button @click="save">{{ t('保存全部设置') }}</button>
+            <button :disabled="saveBusy" @click="save">{{ saveBusy ? t('保存中…') : t('保存全部设置') }}</button>
             <button class="ghost" @click="loadBans">{{ t('刷新封禁列表') }}</button>
             <span class="muted">{{ msg }}</span>
           </div>
@@ -947,4 +992,7 @@ curl -H "Authorization: Bearer $TOKEN" \
     </div>
     <div v-else class="spinner"></div>
   </template>
+
+  <!-- 全局操作提示：保存/测试等动作的即时反馈 -->
+  <div v-if="toastText" class="admin-toast" :class="{ bad: !toastOk }">{{ toastText }}</div>
 </template>

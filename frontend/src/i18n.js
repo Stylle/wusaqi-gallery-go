@@ -17,6 +17,13 @@ const EN = {
   '确认修改': 'Save', '取消': 'Cancel', '保存': 'Save',
   '密码已修改 ✓': 'Password changed ✓', '提交中…': 'Submitting…',
   '失败：': 'Failed: ',
+  '登录已失效，请重新登录': 'Session expired, please sign in again',
+  '去登录': 'Sign in',
+  '设置已保存 ✓': 'Settings saved ✓',
+  '保存中…': 'Saving…',
+  '已保存 ✓（压缩方案对新上传生效）': 'Saved ✓ (compression applies to new uploads)',
+  '发送失败 ✗': 'Send failed ✗',
+  '未知错误': 'Unknown error',
   // 登录页
   '登录后可上传图片、复制链接与使用随机图 API。': 'Sign in to upload, copy links and use the random API.',
   '用户名': 'Username', '密码': 'Password', '管理员 Token': 'Admin Token',

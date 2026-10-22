@@ -12,10 +12,16 @@ import re
 import threading
 import time
 import traceback
+import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
 from . import db
+
+# 不少 Webhook 服务（含 Cloudflare/WAF 前置）会直接 403 掉 Python-urllib 的默认 UA，
+# 这里默认伪装成普通浏览器；后台「自定义请求头」里可以覆盖。
+DEFAULT_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 lolis-gallery/1.0")
 
 
 def render(tpl: str, ctx: dict) -> str:
@@ -42,7 +48,12 @@ def send(event: str, message: str, extra: dict | None = None) -> tuple[bool, str
         "time": datetime.now().astimezone().isoformat(timespec="seconds"),
         **(extra or {}),
     }
-    headers = {"Content-Type": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": DEFAULT_UA,
+        "Accept": "*/*",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+    }
     custom = (s.get("notify_headers") or "").strip()
     if custom:
         try:
@@ -55,25 +66,52 @@ def send(event: str, message: str, extra: dict | None = None) -> tuple[bool, str
         data = render(tpl, ctx).encode()
     elif body_type == "text":
         data = message.encode()
-        headers["Content-Type"] = "text/plain"
+        headers["Content-Type"] = "text/plain; charset=utf-8"
     else:
         data = json.dumps(ctx, ensure_ascii=False).encode()
+    req = urllib.request.Request(url, data=None if method == "GET" else data,
+                                 headers=headers, method=method)
+    # 先直连：内网/本机目标不能被系统代理拦；外网目标直连失败再退回系统代理
+    ok, err = _open(req, direct=True)
+    if ok:
+        return True, ""
+    if urllib.request.getproxies():
+        ok2, err2 = _open(req, direct=False)
+        if ok2:
+            return True, ""
+        err = err if "HTTP" in err else f"{err} / 代理：{err2}"
+    return False, err
+
+
+def _open(req, direct: bool) -> tuple[bool, str]:
+    """发一次请求；返回 (ok, 人类可读的错误)。"""
     try:
-        req = urllib.request.Request(url, data=None if method == "GET" else data,
-                                     headers=headers, method=method)
-        # 本机/局域网目标绕过系统代理（沙箱/公司代理常不放行内网地址）
-        host = url.split("/")[2].split(":")[0]
-        if host in ("127.0.0.1", "localhost", "::1") or host.startswith("192.168.") \
-                or host.startswith("10."):
-            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-            resp = opener.open(req, timeout=8)
+        if direct:
+            resp = urllib.request.build_opener(
+                urllib.request.ProxyHandler({})).open(req, timeout=8)
         else:
             resp = urllib.request.urlopen(req, timeout=8)
         with resp:
             resp.read(65536)
         return True, ""
-    except Exception as e:
-        return False, str(e)
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read(2048).decode("utf-8", "replace")
+            body = re.sub(r"\s+", " ", body).strip()[:300]
+        except Exception:
+            pass
+        hint = ""
+        if e.code in (401, 403):
+            hint = "（目标拒绝：密钥/签名无效，或被对方 WAF 拦截）"
+        msg = f"HTTP {e.code} {e.reason}{hint}"
+        if body:
+            msg += f" · 响应：{body}"
+        return False, msg
+    except urllib.error.URLError as e:
+        return False, f"网络错误：{e.reason}"
+    except Exception as e:  # 超时、证书等
+        return False, f"{type(e).__name__}: {e}"
 
 
 def fire(event: str, message: str, extra: dict | None = None) -> None:
