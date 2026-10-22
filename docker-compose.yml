@@ -4,9 +4,15 @@ services:
     container_name: lolis-api
     restart: unless-stopped
     environment:
-      - ADMIN_TOKEN=${ADMIN_TOKEN:?请在 .env 中设置 ADMIN_TOKEN}
+      # ---- 管理员账号（首次启动播种；库已存在则不覆盖）----
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      # 万能 Token：留空 = 没有这个凭据；非空且 ALLOW_ADMIN_TOKEN=1 时可直接换会话
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-}
+      - ALLOW_ADMIN_TOKEN=${ALLOW_ADMIN_TOKEN:-0}
+      # 忘记密码时设 1：每次启动把库里的管理员用户名/密码覆盖成上面两项
+      - ADMIN_SYNC=${ADMIN_SYNC:-0}
       - DATA_DIR=/data
-      - MAX_UPLOAD_MB=${MAX_UPLOAD_MB:-50}
       - RATE_LIMIT=${RATE_LIMIT:-120}
     volumes:
       - ./data:/data

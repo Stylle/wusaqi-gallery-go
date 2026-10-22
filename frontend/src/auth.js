@@ -1,52 +1,98 @@
-import { reactive } from 'vue'
-import { verifyToken, getPublicSettings } from './api.js'
+import { reactive, computed } from 'vue'
+import * as api from './api.js'
+import { setSite } from './site.js'
 
-// 登录态 + 站点公开配置（后台可自定义部分）
+// 登录态
 export const store = reactive({
-  token: localStorage.getItem('lg_token') || '',
+  token: '',
+  user: null,
   ok: false,        // 已验证登录
   checked: false,   // 完成首次验证
-  site: { site_title: 'lolis-gallery', site_icon: '', site_tags: '', site_footer: '', random_public: '0' },
 })
 
-export function setToken(t) {
-  store.token = t
-  localStorage.setItem('lg_token', t)
+// 界面状态（画廊筛选 / 尺寸档位）
+export const ui = reactive({
+  activeTag: '',
+  onlyMine: false,
+  viewSize: localStorage.getItem('lg_size') || 'm',
+})
+
+export const isAdmin = computed(() => store.user?.role === 'admin')
+
+export function setViewSize(s) {
+  ui.viewSize = s
+  localStorage.setItem('lg_size', s)
 }
 
-export async function checkAuth() {
-  if (store.token) {
-    try { await verifyToken(store.token); store.ok = true }
-    catch { store.ok = false }
+// ---------- token 存取：勾「记住我」→ localStorage(长效)，否则 sessionStorage(关浏览器失效) ----------
+export function readToken() {
+  return localStorage.getItem('lg_token') || sessionStorage.getItem('lg_token') || ''
+}
+
+export function setToken(t, remember) {
+  store.token = t
+  if (remember) {
+    localStorage.setItem('lg_token', t)
+    sessionStorage.removeItem('lg_token')
   } else {
-    store.ok = false
+    sessionStorage.setItem('lg_token', t)
+    localStorage.removeItem('lg_token')
+  }
+}
+
+export function clearToken() {
+  localStorage.removeItem('lg_token')
+  sessionStorage.removeItem('lg_token')
+  store.token = ''
+  store.user = null
+  store.ok = false
+}
+
+/** 启动时恢复登录态 */
+export async function checkAuth() {
+  const t = readToken()
+  store.token = t
+  if (t) {
+    try {
+      store.user = await api.me(t)
+      store.ok = true
+    } catch {
+      clearToken()
+    }
   }
   store.checked = true
 }
 
+export async function doLogin(username, password, remember) {
+  const d = await api.login(username, password, remember)
+  setToken(d.token, remember)
+  store.user = d.user
+  store.ok = true
+  return d
+}
+
+/** 管理员 Token 直登（兼容入口） */
+export async function doTokenLogin(token, remember) {
+  const d = await api.verifyToken(token)
+  setToken(token, remember)
+  store.user = d.user || { id: 'admin', username: 'admin', role: 'admin' }
+  store.ok = true
+  return d
+}
+
+export async function doLogout() {
+  try { await api.logout(store.token) } catch { /* 后端不可达也照常退出 */ }
+  clearToken()
+}
+
+export async function refreshMe() {
+  if (!store.token) return
+  try {
+    store.user = await api.me(store.token)
+    store.ok = true
+  } catch { store.ok = false }
+}
+
 export async function loadSite() {
-  try { Object.assign(store.site, await getPublicSettings()) } catch { /* 后端未起也不断页 */ }
-  applySite()
+  try { setSite(await api.getPublicSettings()) } catch { /* 后端未起也不断页 */ }
 }
-
-export function applySite() {
-  const s = store.site
-  document.title = `${s.site_title} — ギャラリー`
-  // 动态 favicon：后台可配 URL 或 emoji
-  const link = document.querySelector("link[rel='icon']") || document.createElement('link')
-  link.rel = 'icon'
-  if (s.site_icon.startsWith('http')) {
-    link.href = s.site_icon
-    link.type = ''
-  } else if (s.site_icon) {
-    link.href = 'data:image/svg+xml,' + encodeURIComponent(
-      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#534AB7"/><text x="16" y="22" font-size="16" text-anchor="middle" fill="#fff">${s.site_icon}</text></svg>`)
-    link.type = 'image/svg+xml'
-  } else {
-    link.href = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23534AB7'/%3E%3Cpath d='M8 22V10h3.2v9.2H24V22H8z' fill='%23fff'/%3E%3C/svg%3E"
-  }
-  document.head.appendChild(link)
-}
-
-export const siteTags = () =>
-  (store.site.site_tags || '').split(',').map(t => t.trim()).filter(Boolean)

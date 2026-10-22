@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7B6CFF"/>
+      <stop offset="1" stop-color="#4B3FBF"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <!-- 相框 -->
+  <rect x="13" y="17" width="38" height="30" rx="6" fill="none" stroke="#fff" stroke-width="4"/>
+  <!-- 太阳 -->
+  <circle cx="24.5" cy="27" r="3.6" fill="#FFD166"/>
+  <!-- 山景 -->
+  <path d="M17 43l9.5-11.5 7 8 5.5-6 8 9.5z" fill="#fff"/>
+</svg>
