@@ -1,0 +1,43 @@
+# Docker Hub 镜像部署版：NAS 上无需源码与构建，直接拉取运行。
+# 用法：
+#   curl -O https://raw.githubusercontent.com/Stylle/lolis-gallery/main/docker-compose.hub.yml
+#   curl -O https://raw.githubusercontent.com/Stylle/lolis-gallery/main/.env.example -o .env
+#   vi .env                # 改 ADMIN_PASSWORD
+#   docker compose -f docker-compose.hub.yml up -d
+# 升级：docker compose -f docker-compose.hub.yml pull && docker compose -f docker-compose.hub.yml up -d
+services:
+  api:
+    image: stylle/lolis-api:latest
+    container_name: lolis-api
+    restart: unless-stopped
+    environment:
+      # ---- 管理员账号（首次启动播种；库已存在则不覆盖）----
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      # 忘记密码时设 1：每次启动把库里的管理员用户名/密码覆盖成上面两项
+      - ADMIN_SYNC=${ADMIN_SYNC:-0}
+      - DATA_DIR=/data
+      - RATE_LIMIT=${RATE_LIMIT:-120}
+    volumes:
+      - ./data:/data
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  web:
+    image: stylle/lolis-web:latest
+    container_name: lolis-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8300}:80"
+    volumes:
+      - ./data:/data:ro
+    depends_on:
+      api:
+        condition: service_healthy

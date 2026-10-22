@@ -89,6 +89,41 @@ docker compose up -d --build
 
 访问 `http://<主机IP>:8300`，用 `.env` 里的账号密码登录即可。
 
+### 方式二：Docker Hub 镜像部署（免构建，推荐 NAS 用）
+
+镜像已发布：[`stylle/lolis-api`](https://hub.docker.com/r/stylle/lolis-api) / [`stylle/lolis-web`](https://hub.docker.com/r/stylle/lolis-web)
+
+```bash
+mkdir -p /vol1/docker/lolis-gallery && cd /vol1/docker/lolis-gallery
+curl -O https://raw.githubusercontent.com/Stylle/lolis-gallery/main/docker-compose.hub.yml
+curl -o .env https://raw.githubusercontent.com/Stylle/lolis-gallery/main/.env.example
+vi .env                               # 至少改 ADMIN_PASSWORD
+docker compose -f docker-compose.hub.yml up -d
+```
+
+升级只需重新拉取：
+
+```bash
+docker compose -f docker-compose.hub.yml pull && docker compose -f docker-compose.hub.yml up -d
+```
+
+### 发布新镜像（维护者）
+
+在任意装了 Docker 的机器上：
+
+```bash
+git clone https://github.com/Stylle/lolis-gallery.git && cd lolis-gallery
+docker login -u stylle                # 密码处填 Docker Hub Access Token
+bash scripts/build-push.sh            # Windows 用 scripts\build-push.bat
+```
+
+脚本会构建并推送 `latest` + 当前 git 短哈希双标签，便于回滚：
+
+```bash
+# 回滚到指定版本（把 <sha> 换成推过的短哈希）
+docker compose -f docker-compose.hub.yml pull   # 拉不到旧标签时手动 docker pull stylle/lolis-api:<sha>
+```
+
 ### 环境变量
 
 | 变量 | 默认 | 说明 |
