@@ -2,52 +2,45 @@
 
 二次元图片收藏画廊 + 随机图片 API。单容器部署（nginx + FastAPI 同镜像），内置可配置压缩管线（原图/压缩版/缩略图三份产物）、流量防御（限流 + webhook 告警 + IP 封禁）、账号体系与树形管理后台。
 
-## Compose 部署（推荐）
+## Compose 粘贴式部署（推荐）
 
-```bash
-mkdir -p /opt/wusaqi-gallery && cd /opt/wusaqi-gallery
+把下面整段粘进 飞牛 Docker → Compose / Portainer / `docker compose up -d`：
 
-# 1. 拉取 compose 与环境变量模板
-curl -fO https://raw.githubusercontent.com/Stylle/wusaqi-gallery/main/docker-compose.hub.yml
-curl -fso .env https://raw.githubusercontent.com/Stylle/wusaqi-gallery/main/.env.example
-
-# 2. 修改 .env（必改 ADMIN_PASSWORD）
-vi .env
-
-# 3. 启动（数据落在 ./data）
-docker compose -f docker-compose.hub.yml up -d
+```yaml
+services:
+  gallery:
+    image: stylle/wusaqi-gallery:latest
+    container_name: wusaqi-gallery
+    restart: unless-stopped
+    ports:
+      - "8300:80"                         # 左边=对外端口；右边 80 固定
+    volumes:
+      - ./data:/data                      # 数据目录（图片+数据库），建议绝对路径
+    environment:
+      - ADMIN_PASSWORD=change-me-please   # 必改：管理员初始密码（仅首次建库播种）
+      - ADMIN_USERNAME=admin              # 可省，默认 admin
+      - ADMIN_SYNC=0                      # 1=启动时强制用上面的密码覆盖库里（忘记密码救援，救完改回 0）
+      - RATE_LIMIT=120                    # 随机图每 IP 每分钟限流，0=关闭
+      - TZ=Asia/Shanghai
 ```
 
-访问 `http://<主机IP>:8300`，用 `.env` 里的账号密码登录。
+访问 `http://<主机IP>:8300` 登录。所有数据在挂载的 `data` 目录里，备份/迁移 = 拷走该目录。
 
-### .env 最小配置
+升级：重新 pull 镜像后重建容器（`docker compose pull && docker compose up -d`），数据不受影响。
 
-```ini
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=please-change-me   # 必改
-ADMIN_SYNC=0                      # 忘记密码时：改密码 + 设 1 重启一次
-WEB_PORT=8300                     # 对外端口
-RATE_LIMIT=120                    # 随机图每 IP 每分钟限流，0 = 关闭
-```
+### 环境变量说明
 
-### 日常管理
+| 变量 | 必备 | 默认 | 说明 |
+|---|---|---|---|
+| `ADMIN_PASSWORD` | ✅ | `changeme` | 管理员初始密码，仅首次建库时播种 |
+| `ADMIN_USERNAME` | | `admin` | 管理员用户名 |
+| `ADMIN_SYNC` | | `0` | `1` = 每次启动强制覆盖库里的账号密码（忘记密码救援，用完改回） |
+| `RATE_LIMIT` | | `120` | 随机图 API 每 IP 每分钟上限，超出 webhook 告警 + 临时封禁；`0` 关闭 |
+| `TZ` | | 容器默认 | 时区，影响定时汇报与日志时间戳 |
 
-```bash
-# 升级到最新镜像
-docker compose -f docker-compose.hub.yml pull && docker compose -f docker-compose.hub.yml up -d
+压缩参数、webhook、站点标题/图标/页脚等更多配置全部在**后台管理面板**设置（存数据库，热生效），无需环境变量。
 
-# 日志 / 状态
-docker compose -f docker-compose.hub.yml logs -f
-docker compose -f docker-compose.hub.yml ps
-
-# 备份：打包 ./data 一个目录即可（图片 + SQLite 元数据）
-```
-
-### 导入已有图片
-
-把图片直接放进 `./data/uploads/`（保持任意目录结构），后台「本地图库导入」页点「一键导入全部」——后台任务自动全量入库（生成缩略图与压缩版），失败的自动进入重试队列，下次导入优先重试。
-
-## 源码构建部署（自改代码场景）
+### 源码构建部署（自改代码场景）
 
 ```bash
 git clone https://github.com/Stylle/wusaqi-gallery.git && cd wusaqi-gallery
@@ -58,14 +51,11 @@ docker compose up -d --build
 ## 随机图 API
 
 ```bash
-# JSON 元数据（variant=compressed|original）
-GET /api/random?variant=compressed
-
-# 302 直链（Markdown/外链直接用）
-GET /api/random/image?variant=compressed
+GET /api/random?variant=compressed     # JSON 元数据（variant=compressed|original）
+GET /api/random/image?variant=compressed   # 302 直链，Markdown/外链直接用
 ```
 
-默认仅登录可用；后台「流量与权限」里可开启公开访问（`random_public`）。
+默认仅登录可用；后台「流量与权限」可开启公开访问。
 
 ## 链接
 

@@ -89,23 +89,38 @@ wusaqi-gallery/
 
 镜像已发布：[`stylle/wusaqi-gallery`](https://hub.docker.com/r/stylle/wusaqi-gallery)（单容器：nginx + FastAPI 同容器）
 
-```bash
-mkdir -p /opt/wusaqi-gallery && cd /opt/wusaqi-gallery
-curl -O https://raw.githubusercontent.com/Stylle/wusaqi-gallery/main/docker-compose.hub.yml
-curl -o .env https://raw.githubusercontent.com/Stylle/wusaqi-gallery/main/.env.example
-vi .env                               # 至少改 ADMIN_PASSWORD
-docker compose -f docker-compose.hub.yml up -d
+**粘贴式部署**——把下面这段整段粘进 飞牛 Docker → Compose（或 Portainer、`docker compose up -d`）即可：
+
+```yaml
+services:
+  gallery:
+    image: stylle/wusaqi-gallery:latest   # 锁定版本可换 :<git短哈希>，回滚同理
+    container_name: wusaqi-gallery
+    restart: unless-stopped               # 开机自启 + 异常自动重启
+    ports:
+      - "8300:80"                         # 【必备·按需改】左边是对外端口；右边 80 固定别动
+    volumes:
+      - ./data:/data                      # 【必备·按需改】左边是数据目录（图片+数据库），建议绝对路径如 /vol1/docker/wusaqi-gallery/data
+    environment:
+      # ---------- 必备 ----------
+      - ADMIN_PASSWORD=change-me-please   # 【必备】管理员初始密码（仅首次建库播种，之后改密码走后台）
+      # ---------- 可选：有默认值，不需要可整行删除 ----------
+      - ADMIN_USERNAME=admin              # 管理员用户名，默认 admin
+      - ADMIN_SYNC=0                      # 1 = 每次启动用上面的用户名/密码强制覆盖库里的（忘记密码救援通道；救完务必改回 0）
+      - RATE_LIMIT=120                    # 随机图 API 每 IP 每分钟请求上限，超出触发 webhook 告警 + 临时封禁；0 = 关闭
+      - TZ=Asia/Shanghai                  # 时区（影响每日/每周汇报与日志时间戳）
 ```
 
-访问 `http://<主机IP>:8300`，用 `.env` 里的账号密码登录即可。
+（完整版含健康检查见仓库 `docker-compose.hub.yml`；健康检查段可整段省略。）
 
-日常管理：
+访问 `http://<主机IP>:8300`，用上面的账号密码登录即可。
+
+日常管理（命令行方式时）：
 
 ```bash
-docker compose -f docker-compose.hub.yml logs -f     # 看日志
-docker compose -f docker-compose.hub.yml pull && \
-docker compose -f docker-compose.hub.yml up -d       # 升级到 latest
-docker compose -f docker-compose.hub.yml down        # 停止（data/ 数据不受影响）
+docker compose pull && docker compose up -d          # 升级到 latest
+docker compose logs -f                               # 看日志
+docker compose down                                  # 停止（data/ 数据不受影响）
 ```
 
 > 数据全部在部署目录的 `data/` 里（SQLite + 图片），备份/迁移 = 拷走这个目录。

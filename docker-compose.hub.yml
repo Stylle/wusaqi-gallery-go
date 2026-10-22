@@ -1,32 +1,30 @@
-# Docker Hub 镜像部署版（单容器）：NAS / VPS 直接拉取运行，无需源码与构建。
-# 用法：
-#   curl -O https://raw.githubusercontent.com/Stylle/wusaqi-gallery/main/docker-compose.hub.yml
-#   curl -o .env https://raw.githubusercontent.com/Stylle/wusaqi-gallery/main/.env.example
-#   vi .env                # 改 ADMIN_PASSWORD
-#   docker compose -f docker-compose.hub.yml up -d
-# 升级：docker compose -f docker-compose.hub.yml pull && docker compose -f docker-compose.hub.yml up -d
+# ============================================================
+# wusaqi-gallery 单容器部署（Docker Hub 镜像版）
+# 用法：本文件整段粘进 飞牛 Docker → Compose / Portainer / 命令行均可
+# 所有数据（图片 + 数据库）都在挂载的 data 目录里，备份 = 备份该目录
+# 升级：重新 pull 镜像后重建容器即可，数据不受影响
+# ============================================================
 services:
   gallery:
-    image: stylle/wusaqi-gallery:latest
+    image: stylle/wusaqi-gallery:latest   # 锁定版本可换 :<git短哈希>，回滚同理
     container_name: wusaqi-gallery
-    restart: unless-stopped
-    environment:
-      # ---- 管理员账号（首次启动播种；库已存在则不覆盖）----
-      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
-      # 忘记密码时设 1：每次启动把库里的管理员用户名/密码覆盖成上面两项
-      - ADMIN_SYNC=${ADMIN_SYNC:-0}
-      - DATA_DIR=/data
-      - RATE_LIMIT=${RATE_LIMIT:-120}
-    volumes:
-      - ./data:/data
+    restart: unless-stopped               # 开机自启 + 异常自动重启
     ports:
-      - "${WEB_PORT:-8300}:80"
+      - "8300:80"                         # 【必备·按需改】左边是对外端口；右边 80 固定别动
+    volumes:
+      - ./data:/data                      # 【必备·按需改】左边是数据目录（图片+数据库），建议绝对路径如 /vol1/docker/wusaqi-gallery/data
+    environment:
+      # ---------- 必备 ----------
+      - ADMIN_PASSWORD=change-me-please   # 【必备】管理员初始密码（仅首次建库播种，之后改密码走后台）
+      # ---------- 可选：有默认值，不需要可整行删除 ----------
+      - ADMIN_USERNAME=admin              # 管理员用户名，默认 admin
+      - ADMIN_SYNC=0                      # 1 = 每次启动用上面的用户名/密码强制覆盖库里的（忘记密码救援通道；救完务必改回 0）
+      - RATE_LIMIT=120                    # 随机图 API 每 IP 每分钟请求上限，超出触发 webhook 告警 + 临时封禁；0 = 关闭
+      - TZ=Asia/Shanghai                  # 时区（影响每日/每周汇报与日志时间戳）
+    # ---------- 可选：健康检查（飞牛/Portainer 显示运行状态；不需要可整段删除）----------
     healthcheck:
-      # 经 nginx 全链路探活（反代→uvicorn→数据库）
-      test: ["CMD", "python", "-c",
-             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1/api/health', timeout=3).status==200 else 1)"]
-      interval: 15s
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1/api/health', timeout=3)"]
+      interval: 30s                       # 探活间隔
       timeout: 5s
-      retries: 5
-      start_period: 25s
+      retries: 3
+      start_period: 20s                   # 启动宽限期，避免初始化慢被误杀
