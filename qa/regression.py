@@ -48,6 +48,7 @@ def service_command(env, healthcheck=False):
     # Host networking lets the isolated service reach the test webhook server.
     # Only disposable test data is mounted, at the same path for import tests.
     command = ["docker", "run", "--rm", "--name", name, "--network", "host",
+               "--user", f"{os.getuid()}:{os.getgid()}",
                "--mount", f"type=bind,source={env['DATA_DIR']},target={env['DATA_DIR']}"]
     for key, flag in (("QA_DOCKER_PLATFORM", "--platform"), ("QA_DOCKER_MEMORY", "--memory"), ("QA_DOCKER_CPUS", "--cpus")):
         if os.environ.get(key):
