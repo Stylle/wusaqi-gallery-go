@@ -1,5 +1,6 @@
 <script setup>
-import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
+import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'
+import { columnsFor, masonryColumns } from '../layout.js'
 import { getImages, getTags, copyText, patchImage, deleteImage, fmtSize } from '../api.js'
 import { store, ui, setViewSize } from '../auth.js'
 import { absUrl } from '../site.js'
@@ -7,7 +8,7 @@ import { t } from '../i18n.js'
 
 const items = ref([])
 const tags = ref([])
-const page = ref(1)
+const cursor = ref('')
 const total = ref(0)
 const hasMore = ref(false)
 const loading = ref(false)
@@ -16,28 +17,63 @@ const ctx = ref(null)
 const dialog = ref(null)     // {type:'rename'|'delete', item, value}
 const dialogMsg = ref('')
 const toast = ref('')
+const error = ref('')
+const sentinel = ref(null)
+const grid = ref(null)
+const gridWidth = ref(Math.max(1, Math.min(window.innerWidth - 24, 1094)))
+const viewportWidth = ref(window.innerWidth)
+const columnCount = computed(() => columnsFor(gridWidth.value, viewportWidth.value, ui.viewSize))
+const columns = computed(() => masonryColumns(items.value, columnCount.value, gridWidth.value, viewportWidth.value <= 768 ? 8 : 12))
+let resizeObserver = null
+let observer = null
+let controller = null
+let generation = 0
+let mounted = false
 
 const LIMIT = 36
-const pages = computed(() => Math.max(1, Math.ceil(total.value / LIMIT)))
-
-async function load(p = 1) {
+async function load(reset = false) {
+  if (!reset && (loading.value || !hasMore.value || error.value)) return
+  if (reset) {
+    generation++
+    controller?.abort()
+    cursor.value = ''
+    items.value = []
+    hasMore.value = true
+    current.value = null
+  }
+  const requestGeneration = generation
+  controller = new AbortController()
   loading.value = true
+  error.value = ''
   try {
     const d = await getImages({
-      page: p, limit: LIMIT, sort: 'latest',
+      cursor: cursor.value, limit: LIMIT, signal: controller.signal,
       tag: ui.activeTag, mine: ui.onlyMine && store.ok, token: store.token,
     })
-    items.value = d.items
-    page.value = d.page
+    if (requestGeneration !== generation) return
+    const seen = new Set(items.value.map(it => it.id))
+    items.value.push(...d.items.filter(it => !seen.has(it.id)))
+    cursor.value = d.nextCursor || ''
     total.value = d.total
     hasMore.value = d.hasMore
   } catch (e) {
+    if (e.name === 'AbortError' || requestGeneration !== generation) return
     if (e.status === 401) { ui.onlyMine = false }
-    items.value = []
+    error.value = e.message
   } finally {
-    loading.value = false
+    if (requestGeneration === generation) {
+      loading.value = false
+      await nextTick()
+      // Reobserve after layout so a short first batch can fill the viewport.
+      if (mounted && observer && sentinel.value) {
+        observer.unobserve(sentinel.value)
+        observer.observe(sentinel.value)
+      }
+    }
   }
 }
+
+function retry() { error.value = ''; load() }
 
 function flash(msg) {
   toast.value = msg
@@ -104,8 +140,8 @@ async function copyUrl(which) {
   const map = { original: it.url, compressed: it.compressed, thumb: it.thumb }
   const p = map[which]
   if (!p) { flash(t('该图没有这个版本')); return }
-  await copyText(absUrl(p))
-  flash(t('已复制链接'))
+  try { await copyText(absUrl(p)); flash(t('已复制链接')) }
+  catch (e) { flash(e.message) }
 }
 
 /** 下载原图 / 压缩图（同源直接触发保存；跨域时浏览器可能改为新窗口打开） */
@@ -140,12 +176,28 @@ function startDelete(it) {
   dialogMsg.value = ''
 }
 
+function startTag(it) {
+  ctx.value = null
+  dialog.value = { type: 'tag', item: it, value: it.tag || '' }
+  dialogMsg.value = ''
+}
+
 async function confirmDialog() {
   const d = dialog.value
   if (!d) return
   dialogMsg.value = t('处理中…')
   try {
-    if (d.type === 'rename') {
+    if (d.type === 'tag') {
+      const updated = await patchImage(store.token, d.item.id, { tag: d.value.trim() })
+      const i = items.value.findIndex(x => x.id === updated.id)
+      if (i >= 0) items.value[i] = updated
+      if (current.value?.id === updated.id) current.value = updated
+      dialog.value = null
+      await reloadTags()
+      // Removing a label from the last image also clears a stale filter.
+      if (ui.activeTag && updated.tag !== ui.activeTag) await load(true)
+      flash(t('标签已更新'))
+    } else if (d.type === 'rename') {
       const name = (d.value || '').trim()
       if (!name) { dialogMsg.value = t('文件名不能为空'); return }
       const updated = await patchImage(store.token, d.item.id, { filename: name })
@@ -160,6 +212,7 @@ async function confirmDialog() {
       total.value = Math.max(0, total.value - 1)
       if (current.value?.id === d.item.id) current.value = null
       dialog.value = null
+      await reloadTags()
       flash(t('已删除（原图 + 压缩图 + 缩略图）'))
     }
   } catch (e) {
@@ -173,10 +226,17 @@ function onKey(e) {
   if (e.key === 'Escape') { if (dialog.value) dialog.value = null; else closeLightbox() }
 }
 
-watch(() => [ui.activeTag, ui.onlyMine], () => load(1))
+watch(() => [ui.activeTag, ui.onlyMine, store.token], () => { if (mounted) load(true) })
+watch(grid, (el, old) => {
+  if (old) resizeObserver?.unobserve(old)
+  if (el) resizeObserver?.observe(el)
+})
 
 async function reloadTags() {
-  try { tags.value = (await getTags()).tags || [] } catch { /* ignore */ }
+  try {
+    tags.value = (await getTags()).tags || []
+    if (ui.activeTag && !tags.value.some(tg => tg.name === ui.activeTag)) ui.activeTag = ''
+  } catch { /* keep existing tags on a transient error */ }
 }
 
 function pickTag(name) {
@@ -184,12 +244,28 @@ function pickTag(name) {
 }
 
 onMounted(() => {
-  load()
+  mounted = true
+  resizeObserver = new ResizeObserver(entries => {
+    gridWidth.value = entries[0].contentRect.width
+    viewportWidth.value = window.innerWidth
+  })
+  observer = new IntersectionObserver(entries => {
+    if (entries.some(entry => entry.isIntersecting)) load()
+  }, { rootMargin: '500px' })
+  if (sentinel.value) observer.observe(sentinel.value)
+  load(true)
   reloadTags()
   document.addEventListener('click', closeAll)
   document.addEventListener('keydown', onKey)
 })
 onUnmounted(() => {
+  mounted = false
+  generation++
+  controller?.abort()
+  observer?.disconnect()
+  resizeObserver?.disconnect()
+  clearTimeout(pressTimer)
+  clearTimeout(swallowTimer)
   document.removeEventListener('click', closeAll)
   document.removeEventListener('keydown', onKey)
 })
@@ -197,7 +273,7 @@ onUnmounted(() => {
 
 <template>
   <!-- 标签筛选（仅画廊页） -->
-  <div class="tagbar" v-if="tags.length">
+  <div class="tagbar">
     <span class="tag-chip all" :class="{ on: !ui.activeTag }" @click="ui.activeTag = ''">
       {{ t('全部') }}
     </span>
@@ -226,18 +302,20 @@ onUnmounted(() => {
     </span>
   </div>
 
-  <div v-if="loading" class="masonry" :class="'size-' + ui.viewSize">
+  <div v-if="loading && !items.length" class="masonry" :class="'size-' + ui.viewSize">
     <div v-for="i in 9" :key="i" class="skel" :style="{ aspectRatio: i % 3 === 0 ? '3/4' : '1' }"></div>
   </div>
-  <div v-else-if="!items.length" class="lockbox">
+  <div v-else-if="!items.length && !error" class="lockbox">
     <div class="icon">🖼️</div>
     <p class="muted">
       {{ ui.activeTag || ui.onlyMine ? t('该筛选下还没有图片') : t('还没有图片') }}
     </p>
   </div>
-  <div v-else class="masonry" :class="'size-' + ui.viewSize">
-    <div v-for="it in items" :key="it.id" class="cell"
+  <div v-else ref="grid" class="masonry stable-grid" :class="'size-' + ui.viewSize" :style="{ '--columns': columnCount }">
+    <div v-for="(column, columnIndex) in columns" :key="columnIndex" class="masonry-column">
+    <div v-for="it in column" :key="it.id" class="cell" role="button" tabindex="0" :aria-label="t('查看图片') + ' ' + it.filename"
       :style="{ aspectRatio: `${it.width} / ${it.height}` }" @click="open(it)"
+      @keydown.enter="open(it)" @keydown.space.prevent="open(it)"
       @touchstart="touchStart($event, it)" @touchend="touchEnd"
       @touchmove="touchEnd" @touchcancel="touchEnd">
       <img :src="it.thumb || it.compressed || it.url" :alt="it.filename" loading="lazy"
@@ -245,12 +323,16 @@ onUnmounted(() => {
       <span class="tag-on-img" v-if="it.tag">{{ it.tag }}</span>
       <span class="own" v-if="store.ok && it.mine">{{ t('我的') }}</span>
     </div>
+    </div>
   </div>
 
-  <div class="pager">
-    <button class="ghost" :disabled="page <= 1 || loading" @click="load(page - 1)">← {{ t('上一页') }}</button>
-    <span class="muted">{{ page }} / {{ pages }}</span>
-    <button class="ghost" :disabled="!hasMore || loading" @click="load(page + 1)">{{ t('下一页') }} →</button>
+  <div ref="sentinel" class="load-sentinel" role="status" aria-live="polite">
+    <template v-if="error">
+      <span class="tag-err">{{ error }}</span>
+      <button class="ghost" @click="retry">{{ t('重试加载') }}</button>
+    </template>
+    <span v-else-if="loading" class="muted">{{ t('正在加载…') }}</span>
+    <span v-else-if="items.length && !hasMore" class="muted">{{ t('已经到底了') }} · {{ items.length }} / {{ total }}</span>
   </div>
 
   <!-- 灯箱 -->
@@ -267,6 +349,7 @@ onUnmounted(() => {
     <div class="actions">
       <button @click.stop="menu($event, current)">{{ t('操作 ▾') }}</button>
       <button class="ghost" v-if="current.canEdit" @click="startRename(current)">{{ t('重命名') }}</button>
+      <button class="ghost" v-if="current.canEdit" @click="startTag(current)">{{ t('编辑标签') }}</button>
       <button class="ghost danger" v-if="current.canEdit" @click="startDelete(current)">{{ t('删除') }}</button>
       <button class="ghost" @click="closeLightbox">{{ t('关闭 (Esc)') }}</button>
     </div>
@@ -286,6 +369,7 @@ onUnmounted(() => {
     </button>
     <div class="sep" v-if="ctx.item.canEdit"></div>
     <button v-if="ctx.item.canEdit" @click="startRename(ctx.item)">{{ t('✏️ 重命名') }}</button>
+    <button v-if="ctx.item.canEdit" @click="startTag(ctx.item)">{{ t('编辑标签') }}</button>
     <button v-if="ctx.item.canEdit" class="danger" @click="startDelete(ctx.item)">{{ t('🗑️ 删除图片') }}</button>
     <div v-if="!store.ok" class="muted" style="padding:4px 12px 6px;font-size:12px">{{ t('登录后可复制链接') }}</div>
   </div>
@@ -302,6 +386,13 @@ onUnmounted(() => {
           <input v-model="dialog.value" @keyup.enter="confirmDialog" :placeholder="t('新文件名（不含扩展名）')" />
         </div>
         <p class="mono muted">{{ dialog.item.filename }}</p>
+      </template>
+      <template v-else-if="dialog.type === 'tag'">
+        <h3>{{ t('编辑标签') }}</h3>
+        <div class="field">
+          <input v-model="dialog.value" maxlength="40" list="gallery-tags" @keyup.enter="confirmDialog" :placeholder="t('留空可移除标签')" />
+          <datalist id="gallery-tags"><option v-for="tg in tags" :key="tg.name" :value="tg.name" /></datalist>
+        </div>
       </template>
       <template v-else>
         <h3>{{ t('删除这张图？') }}</h3>

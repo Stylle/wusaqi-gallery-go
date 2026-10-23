@@ -21,9 +21,11 @@ services:
       - ADMIN_SYNC=0                      # 1 = 每次启动用上面的用户名/密码强制覆盖库里的（忘记密码救援通道；救完务必改回 0）
       - RATE_LIMIT=120                    # 随机图 API 每 IP 每分钟请求上限，超出触发 webhook 告警 + 临时封禁；0 = 关闭
       - TZ=Asia/Shanghai                  # 时区（影响每日/每周汇报与日志时间戳）
+      - GOMEMLIMIT=40MiB                  # Go 运行时软限制，不是容器硬上限
+      - GOGC=50
     # ---------- 可选：健康检查（飞牛/Portainer 显示运行状态；不需要可整段删除）----------
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1/api/health', timeout=3)"]
+      test: ["CMD", "/app/gallery", "healthcheck"]
       interval: 30s                       # 探活间隔
       timeout: 5s
       retries: 3

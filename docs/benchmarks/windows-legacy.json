@@ -1,0 +1,44 @@
+{
+  "platform": "Windows-11-10.0.22621-SP0",
+  "metric": "process RSS / Windows working set; MiB; not Docker cgroup",
+  "engine": "legacy-python",
+  "library_metadata_rows": 10000,
+  "real_fixture_files_before_upload": 83,
+  "requests": 1024,
+  "concurrency": 16,
+  "idle": {
+    "rss_mib": 57.3,
+    "private_mib": 43.34
+  },
+  "after_browsing": {
+    "rss_mib": 75.61,
+    "private_mib": 62.29
+  },
+  "upload_process_tree_peak_mib": 181.11,
+  "image_worker_processes_observed": 0,
+  "persistent_image_workers": [],
+  "post_upload_median_rss_mib": 70.36,
+  "post_upload_samples": [
+    {
+      "rss_mib": 70.36,
+      "private_mib": 57.47
+    },
+    {
+      "rss_mib": 70.36,
+      "private_mib": 57.47
+    },
+    {
+      "rss_mib": 70.36,
+      "private_mib": 57.47
+    },
+    {
+      "rss_mib": 70.36,
+      "private_mib": 57.47
+    },
+    {
+      "rss_mib": 70.36,
+      "private_mib": 57.47
+    }
+  ],
+  "docker_measurement": "pending container build and test"
+}

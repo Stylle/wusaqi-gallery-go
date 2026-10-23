@@ -7,3 +7,12 @@ node_modules/
 dist/
 .DS_Store
 .vps-admin-password
+.tools/
+server/gallery
+server/gallery.exe
+server/gallery-test.exe
+server/gallery-review.exe
+server/gallery-next.exe
+artifacts/
+.venv/
+.qa-data/

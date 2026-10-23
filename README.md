@@ -1,230 +1,226 @@
-# wusaqi-gallery 🖼️
+# wusaqi-gallery-go
 
-自部署的图片收藏画廊 + 随机图 API。Vue 3 + FastAPI + SQLite，双容器 Docker 部署，
-数据全部落在本地目录，**不依赖任何外部云服务**。
+轻量、自部署的图片画廊与随机图 API。保留完整的 Vue 3 界面，用 **Go 单进程 + SQLite** 提供页面、图片和接口；Pillow 仅在处理图片时启动，完成即退出。适合 NAS、小内存 VPS 和个人图床。
 
-## 功能总览
+> 当前源码已迁移至 Go 架构。Docker Hub 的 `latest` 在完成构建、容器实测与发布前仍可能是旧 Python 版本，请勿把源码的测试结果当作已发布镜像的指标。
 
-| 模块 | 说明 |
-|---|---|
-| 画廊 | 瀑布流网格 + 灯箱大图，标签筛选 / 仅看我的 / 三档网格尺寸 |
-| 三 URL 策略 | 每张图落盘三份：原图 `files/`、压缩版 `compressed/`、缩略图 `thumbs/`，右键可复制任意一种链接 |
-| 压缩可配置 | 格式（webp/jpeg/png）、质量、最大宽度，后台调整对新上传生效；每人还可覆盖全局压缩参数 |
-| 随机图 API | `/api/random` JSON 与 302 直链两种形态，`variant=compressed\|original` 选择出图版本，外链/Markdown 直接用 |
-| 上传 | 拖拽多选批量上传，逐文件进度条 + 压缩前后大小对比 |
-| 权限门控 | 游客只能浏览画廊；复制链接 / 随机 API / 上传 / 后台均需登录；随机 API 可在后台一键转公开外链 |
-| 多用户 | 管理员可创建普通用户，配额（总容量/单图上限/日周月上传数）逐人可调 |
-| 流量防御 | 随机接口限流 → 超限 webhook 告警 + IP 封禁 N 分钟；登录爆破计数封禁；黑白名单；内网 IP 永不封禁 |
-| 通知 | webhook 推送（登录 / 封禁 / 解封 / 限流等事件分类开关），支持测试发送 |
-| 后台 | 树形配置面板：站点信息（标题/图标/标签/页脚）、压缩、防御、用户、备份，全部热生效 |
-| 备份恢复 | 一键打包整个数据目录为 zip 下载，上传 zip 一键恢复 |
-| 主题 | 亮色 / 暗黑 / 跟随系统三态 + 纯色 / 炫彩两套配色风格，手机端完整适配（后台为抽屉式侧栏） |
-| 国际化 | 中 / 英文界面切换 |
+## 有哪些功能
 
-## 架构
+| 功能 | 说明 |
+| --- | --- |
+| 画廊 | 瀑布流、灯箱、三档网格、仅看我的、标签筛选；滑到页面底部自动加载下一批，无翻页按钮 |
+| 图片链接 | 保留原图、压缩版、WebP 缩略图三种 URL；复制、下载、重命名与删除 |
+| 标签 | 画廊只显示实际有图片的标签；图片菜单可编辑或清空标签；后台标签池作为上传候选保留 |
+| 上传 | 拖拽、多选、剪贴板粘贴、逐文件进度和压缩大小；JPG/PNG/WebP/AVIF/GIF/BMP，GIF 保留动图 |
+| 压缩 | 自动探测机器或选择轻量/均衡/标准/自定义；格式、质量、宽度、像素上限、并发上限；支持用户覆盖 |
+| 随机图 | JSON 或 302 直链，可选原图/压缩图；默认登录后使用，也可在后台公开 |
+| 用户 | 管理员和普通用户；容量、单图大小、日/周/月上传数量；停用、改密、删除及图片转交 |
+| 后台 | 站点标题、图标、页脚、分享域名、上传、压缩、防御、通知、用户与备份，保存后热生效 |
+| 本地图库 | 扫描已有文件、后台导入、进度、取消、失败重试、补齐缺失缩略图和压缩版 |
+| 防御与统计 | 随机接口限流、登录防爆破、临时封禁、IP/CIDR 黑白名单；最近三天 PV/UV 与热门路径 |
+| 通知 | Webhook 方法/请求头/正文模板，事件开关，日报/周报/月报与测试发送 |
+| 备份 | 在线 SQLite 快照与全部图片 ZIP；校验后恢复，恢复完成需重新登录 |
+| 外观 | 中英切换、亮色/暗色/跟随系统、纯色/渐变，保留手机导航和后台抽屉 |
 
-**单容器双进程**（supervisor 管理）：一个镜像里 nginx 负责静态与反代，uvicorn 负责 API。
+图片、数据库与配置都在本地。核心功能无需外部数据库、Redis 或云存储。公网 IP 归属地查询使用 ip-api.com；Webhook 仅在配置后投递。
 
-```
-        :8300 (对外唯一端口)
-┌─────────────────────────────────────┐
-│  wusaqi-gallery 容器                │
-│  ┌───────────────────────────────┐  │
-│  │ nginx                         │  │
-│  │  /            SPA 静态文件     │  │
-│  │  /files /thumbs /compressed   │  │ ← /data 卷，一年 immutable 长缓存
-│  │  /api/ ──反代──▶ 127.0.0.1:8000│  │
-│  └───────────────────────────────┘  │
-│  ┌───────────────────────────────┐  │
-│  │ uvicorn (FastAPI + SQLite)    │  │ 上传/压缩/鉴权/限流/webhook
-│  └───────────────────────────────┘  │
-│  supervisor 守护两个进程，崩了自动拉起 │
-└─────────────────────────────────────┘
+## 为什么换架构
+
+旧镜像同时常驻 nginx、supervisor、Python/FastAPI，且请求线程各自保留 SQLite 连接和页缓存。新版由一个 Go 进程处理 HTTP 与文件流，SQLite 固定一条连接、2 MiB 页缓存；上传内容写临时文件，图片任务单独启动并在完成后退出，避免图像解码器长期保留内存。
+
+```text
+浏览器 / API 客户端
+         │ :8300 → 容器 :80
+         ▼
+  Go 服务（唯一常驻应用进程）
+    ├─ Vue 静态页面、图片文件流、API
+    ├─ SQLite /data/metadata.db
+    └─ 按需 Pillow 子进程 → 缩略图 / 压缩图 → 退出
 ```
 
-- **省流量设计**：随机 API 与画廊网格默认只出缩略图/压缩版，原图仅在明确请求时出网；
-  nginx 对图片路径下发 `immutable` 长缓存，重复访问不回源。
-- 图片请求由 nginx 直接命中卷内文件，不经过 Python。
-- 单容器的好处：一次 pull、一条 compose、一份日志；数据仍在 `data/` 一个目录里。
+目标是**不处理图片时约 20–70 MB，尽可能更低**；这是验证目标，不是所有机器上的硬保证。`GOMEMLIMIT=40MiB` 是 Go 运行时的软限制，不能当作整个容器内存上限。上传、压缩、导入、备份，以及 Linux 文件缓存会影响测量。架构评估、实测口径与复现步骤见 [架构与内存说明](docs/architecture.md)。
 
-## 代码结构
+## Docker 部署
 
-```
-wusaqi-gallery/
-├── Dockerfile            # 单容器镜像：node 编前端 → python + nginx + supervisor
-├── deploy/
-│   ├── nginx.conf        # 静态+图片伺服 + /api 反代 + 一年 immutable 缓存
-│   └── supervisord.conf  # 双进程守护（uvicorn + nginx）
-├── backend/app/
-│   ├── main.py           # 路由与入口：公开接口/会话/图片/后台/防御中间件
-│   ├── config.py         # 运行时配置（全部可用环境变量覆盖）
-│   ├── db.py             # SQLite：建表迁移/设置/图片/用户/会话/封禁/访问统计
-│   ├── auth.py           # 登录会话（记住我 30d / 会话 12h）与权限
-│   ├── compress.py       # 压缩管线（格式/质量/最大宽度）
-│   ├── notify.py         # webhook 事件推送与周期报告
-│   ├── backup.py         # 整站备份与恢复
-│   ├── perf.py           # 启动环境探测（日志展示）
-│   └── util.py           # 密码哈希与通用工具
-├── frontend/src/
-│   ├── api.js            # 全部后端调用封装
-│   ├── auth.js           # 登录态（双存储 token）与全局校验
-│   ├── site.js           # 站点公开配置下发与动态标题/图标
-│   ├── theme.js          # 三态主题
-│   ├── i18n.js           # 中英文案
-│   └── views/            # Gallery / Random / Upload / Admin / Login
-├── docs/                 # 历史版本规划文档（PLAN/V3/V4）
-├── qa/                   # 回归脚本（compose 契约/单测/端到端/并发冒烟）
-├── docker-compose.yml        # 源码构建部署
-├── docker-compose.hub.yml    # 镜像拉取部署（推荐）
-└── .env.example
-```
-
-**扩展约定**：新增一个后台可调配置项 = `db.DEFAULT_SETTINGS` 加键 +
-`main.py` 的 `PUBLIC_SETTING_KEYS`（若需公开下发）/ `put_settings` 校验规则里声明，
-前端后台树自动渲染，无需改其他代码。
-
-## 快速部署
-
-### 方式一：Docker Hub 镜像部署（推荐，NAS / VPS 通用，免源码免构建）
-
-镜像已发布：[`stylle/wusaqi-gallery`](https://hub.docker.com/r/stylle/wusaqi-gallery)（单容器：nginx + FastAPI 同容器）
-
-**粘贴式部署**——把下面这段整段粘进 飞牛 Docker → Compose（或 Portainer、`docker compose up -d`）即可：
+镜像：[stylle/wusaqi-gallery](https://hub.docker.com/r/stylle/wusaqi-gallery)。发布完成后可直接使用下面的 Compose；需要验证当前源码时先用下一节的源码构建方式。
 
 ```yaml
 services:
   gallery:
-    image: stylle/wusaqi-gallery:latest   # 锁定版本可换 :<git短哈希>，回滚同理
+    image: stylle/wusaqi-gallery:latest
     container_name: wusaqi-gallery
-    restart: unless-stopped               # 开机自启 + 异常自动重启
+    restart: unless-stopped
     ports:
-      - "8300:80"                         # 【必备·按需改】左边是对外端口；右边 80 固定别动
+      - "8300:80"
     volumes:
-      - ./data:/data                      # 【必备·按需改】左边是数据目录（图片+数据库），建议绝对路径如 /vol1/docker/wusaqi-gallery/data
+      - ./data:/data
     environment:
-      # ---------- 必备 ----------
-      - ADMIN_PASSWORD=change-me-please   # 【必备】管理员初始密码（仅首次建库播种，之后改密码走后台）
-      # ---------- 可选：有默认值，不需要可整行删除 ----------
-      - ADMIN_USERNAME=admin              # 管理员用户名，默认 admin
-      - ADMIN_SYNC=0                      # 1 = 每次启动用上面的用户名/密码强制覆盖库里的（忘记密码救援通道；救完务必改回 0）
-      - RATE_LIMIT=120                    # 随机图 API 每 IP 每分钟请求上限，超出触发 webhook 告警 + 临时封禁；0 = 关闭
-      - TZ=Asia/Shanghai                  # 时区（影响每日/每周汇报与日志时间戳）
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: change-me-please
+      ADMIN_SYNC: "0"
+      RATE_LIMIT: "120"
+      TZ: Asia/Shanghai
+      GOMEMLIMIT: 40MiB
+      GOGC: "50"
 ```
 
-（完整版含健康检查见仓库 `docker-compose.hub.yml`；健康检查段可整段省略。）
+执行 `docker compose up -d`，访问 `http://主机IP:8300`。飞牛、群晖、Portainer 可粘贴同一份 Compose。`./data` 建议换成主机的绝对路径。只改端口映射左侧，对内仍使用 80。
 
-访问 `http://<主机IP>:8300`，用上面的账号密码登录即可。
-
-日常管理（命令行方式时）：
+仓库提供 [镜像版 Compose](docker-compose.hub.yml)，包含健康检查。升级和看日志：
 
 ```bash
-docker compose pull && docker compose up -d          # 升级到 latest
-docker compose logs -f                               # 看日志
-docker compose down                                  # 停止（data/ 数据不受影响）
+docker compose -f docker-compose.hub.yml pull
+docker compose -f docker-compose.hub.yml up -d
+docker compose -f docker-compose.hub.yml logs -f
 ```
 
-> 数据全部在部署目录的 `data/` 里（SQLite + 图片），备份/迁移 = 拷走这个目录。
+发布脚本同时推送 `latest` 与 Git 短哈希标签。回滚时将 `image` 改为已发布的哈希标签；数据库如已执行恢复或修改，应同时使用升级前的数据备份。
 
-### 方式二：源码构建部署（需要改代码自用时）
+### 从源码构建
 
 ```bash
-git clone https://github.com/Stylle/wusaqi-gallery.git && cd wusaqi-gallery
-cp .env.example .env && vi .env
+git clone https://github.com/Stylle/wusaqi-gallery-go.git
+cd wusaqi-gallery-go
+cp .env.example .env
+# 编辑 .env，设置初始管理员密码
 docker compose up -d --build
 ```
 
-### 发布新镜像（维护者）
+整个部署仍只有一个容器、一个端口、一份数据卷。Dockerfile 自带健康检查，无需额外 Python 探活进程。
 
-标准构建机为 GreenCloud VPS（`/opt/wusaqi-gallery`，已克隆源码并登录 Docker Hub）：
+## 从旧 Python 版本升级
+
+1. 停止旧服务，备份**整个** `data/` 目录；保留当前镜像标签，方便回滚。
+2. 用新版镜像启动，继续挂载原来的 `/data`，保持 `8300:80`。不要同时运行两个实例写同一份 SQLite。
+3. 新版自动补齐旧表字段，保留已有账号、密码、会话、站点设置、图片归属和文件路径。已有账号不会被环境变量覆盖，除非主动设置 `ADMIN_SYNC=1`。
+4. 登录后检查画廊、随机图、后台和备份。未使用的标签会从画廊消失，但上传标签池仍可在后台编辑。
+
+旧库的 `uploads/uploads/日期/...` 层级会原样保留，不要手动移动文件；分享链接继续有效。旧版本导出的整站 ZIP 也可恢复。恢复会替换数据库和三份图片目录，归档中没有的现有文件不会保留；先备份当前数据。
+
+清理了无人使用的 `/api/admin/upload`、`/api/admin/reindex` 两个旧别名；分别改用 `/api/upload`、`/api/admin/local/import`。画廊随机排序参数不再提供，随机出图继续使用 `/api/random`。普通 `page/limit` 读取仍兼容，页面自身改用游标滚动加载。
+
+## 配置与使用
+
+| 环境变量 | 默认值 | 用途 |
+| --- | --- | --- |
+| `ADMIN_USERNAME` | `admin` | 首次建库创建的管理员用户名 |
+| `ADMIN_PASSWORD` | `changeme` | 首次建库密码；部署时设置自己的密码 |
+| `ADMIN_SYNC` | `0` | 救援开关：设 1 重启，用环境变量覆盖已有管理员账密，完成后改回 0 |
+| `WEB_PORT` | `8300` | 源码 Compose 的主机端口 |
+| `RATE_LIMIT` | `120` | 首次建库的随机接口每 IP 每分钟上限；已有库以后台设置为准，0 关闭 |
+| `TZ` | `Asia/Shanghai`（镜像） | 日志、统计与定时通知的时区 |
+| `GOMEMLIMIT` | `40MiB` | Go 运行时软内存限制；不包含图片子进程与文件缓存 |
+| `GOGC` | `50` | 垃圾回收频率，在 CPU 与内存之间取舍 |
+| `TRUSTED_PROXIES` | 空 | 可信反代 IP/CIDR，逗号分隔；默认忽略客户端伪造的真实 IP 请求头 |
+| `DATA_DIR` | `/data`（镜像） | 数据目录 |
+| `LISTEN_ADDR` | `:80`（镜像） | 服务监听地址，本地开发默认 `127.0.0.1:8000` |
+| `WEB_DIR` / `IMAGE_WORKER` / `PYTHON` | 镜像内置 | 裸机运行时可覆盖页面目录、图片任务脚本和 Python 解释器 |
+
+其他配置都在后台保存到 SQLite 并热生效。管理员不受业务上传配额限制；普通用户的单图上限 0 表示跟随全局，全局单图上限 0 表示不限（HTTP 上传请求仍有 200 MiB 保护上限）。日/周/月是最近 24 小时/7 天/30 天的滚动上传数。
+
+反向代理部署时，填写 `TRUSTED_PROXIES` 并让代理发送 `X-Real-IP` 或 `X-Forwarded-For`。原来的“内网不封禁”规则保留；如果请求实际来自内网代理而未正确传递公网 IP，限流将按内网请求处理。
+
+上传后可在图片上右键或长按：复制原图/压缩图/缩略图链接、下载、重命名、编辑标签、删除。原图不变，压缩配置只影响后续上传；已有图片缺少衍生文件时，可到“本地图库”补齐。
+
+标签池和图片标签相互独立：从标签池移除一个候选，不会批量清除图片已有标签；清空最后一张图片的标签，画廊的对应筛选项会自动消失。
+
+## API
+
+除公开接口外使用 `Authorization: Bearer <token>`，token 来自账号密码登录。
+
+```text
+GET    /api/health
+GET    /api/public/settings
+GET    /api/tags                          # 仅返回 count > 0 的图片标签
+GET    /api/images?limit=36&cursor=...     # 返回 items/total/hasMore/nextCursor
+                                         # 可加 tag=...、mine=1（需登录）
+GET    /api/random?variant=compressed|original[&redirect=true]
+GET    /api/random/image?variant=...      # 302，不缓存随机结果
+POST   /api/auth/login                    # {username,password,remember}
+POST   /api/auth/logout
+GET    /api/auth/me
+POST   /api/auth/password                 # {old,new}
+POST   /api/upload                        # multipart files、tag
+PATCH  /api/images/{id}                   # {filename} 或 {tag}，空 tag 清除
+DELETE /api/images/{id}
+GET/POST/PATCH/DELETE /api/users[/{id}]    # 管理员
+GET/PUT /api/admin/settings
+GET    /api/admin/system
+GET    /api/admin/stats
+GET/POST/DELETE /api/admin/bans[/{ip}]
+POST/DELETE /api/admin/whitelist[/{IP或CIDR}]
+POST/DELETE /api/admin/blacklist[/{IP或CIDR}]
+GET    /api/admin/local/scan?limit=50
+POST   /api/admin/local/import
+GET    /api/admin/local/status
+POST   /api/admin/local/import/cancel
+POST   /api/admin/local/compress?dry_run=true&limit=5
+GET    /api/admin/backup/stats
+GET    /api/admin/backup
+POST   /api/admin/restore                 # multipart file=.zip
+POST   /api/admin/notify/test
+```
+
+滚动读取时，将上次响应的 `nextCursor` 原样传回；切换标签或仅我的条件时从空游标重新开始。`hasMore=false` 即结束。新上传的图片在刷新后出现，删除已读图片不会导致后续重复或跳过。
+
+随机图公开后可直接用于 Markdown：
+
+```markdown
+![random](https://你的域名/api/random/image?variant=compressed)
+```
+
+## 本地运行和验证
+
+需要 Go ≥1.26、Node.js ≥22、Python ≥3.11。先构建前端和 Go 服务，再运行，无需 Docker。
 
 ```bash
-ssh root@<vps>
-cd /opt/wusaqi-gallery
-git pull
-bash scripts/build-push.sh            # 构建并推送 latest + git 短哈希双标签
-```
-
-任意装了 Docker 的机器也可发布：
-
-```bash
-git clone https://github.com/Stylle/wusaqi-gallery.git && cd wusaqi-gallery
-docker login -u stylle                # 密码处填 Docker Hub Access Token（RW 权限）
-bash scripts/build-push.sh            # Windows 用 scripts\build-push.bat
-```
-
-脚本会构建单容器镜像并推送 `latest` + 当前 git 短哈希双标签，便于回滚：
-
-```bash
-# 回滚到指定版本（把 <sha> 换成推过的短哈希）
-docker pull stylle/wusaqi-gallery:<sha>
-# 然后在 docker-compose.hub.yml 里把 image 标签改成对应 sha 再 up -d
-```
-
-### 环境变量
-
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `ADMIN_USERNAME` | `admin` | 首次启动播种的管理员用户名（库已存在不覆盖） |
-| `ADMIN_PASSWORD` | `changeme` | 首次启动的密码；库已存在时不覆盖，启动日志会告警 |
-| `ADMIN_SYNC` | `0` | 忘记密码救援：设 `1` 重启一次，强制把库里管理员账密同步为上面两项，完成后改回 `0` |
-| `WEB_PORT` | `8300` | 对外 HTTP 端口 |
-| `RATE_LIMIT` | `120` | 随机图接口每 IP 每分钟限流，`0` 关闭（后台也可调） |
-
-> 其余全部配置（压缩参数、webhook、黑白名单、上传上限、站点信息等）在后台管理面板调整，存数据库、热生效。
-
-### 更新 / 迁移 / 备份
-
-```bash
-# 更新到最新版
-git pull && docker compose up -d --build
-
-# 迁移到新机器：停服后整个拷走 data/ 即可（SQLite + 图片自包含）
-# 日常备份：后台「备份」页一键下载 zip，或直接备份 data/ 目录
-```
-
-## API 摘要
-
-鉴权统一 `Authorization: Bearer <token>`，token 来自 `POST /api/auth/login`。
-
-```
-GET  /api/health                  # 存活探针（compose healthcheck 用）
-GET  /api/public/settings         # 站点公开信息
-GET  /api/tags                    # 标签列表
-GET  /api/images?page=&limit=&sort=latest|random&tag=&mine=
-GET  /api/random?variant=compressed|original[&redirect=true]
-GET  /api/random/image?variant=   # 302 直链
-POST /api/auth/login|logout       GET /api/auth/me
-POST /api/admin/upload            # multipart files
-PUT  /api/admin/settings          POST /api/admin/reindex
-*    /api/admin/*                 # 用户/封禁/黑白名单/备份/通知（管理员）
-```
-
-完整字段说明见站内「后台 → API 文档」。
-
-## 本地开发（不依赖 Docker）
-
-```bash
-# 后端（Windows 示例，任意 python ≥3.11）
-cd backend
-pip install -r requirements.txt
-ADMIN_USERNAME=admin ADMIN_PASSWORD=test123 DATA_DIR=./data \
-  python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-
-# 前端（/api、/files 等自动代理到 8000）
 cd frontend
 npm ci
-npm run dev        # http://127.0.0.1:5173
+npm test
+npm run build
+cd ../server
+go build -trimpath -ldflags="-s -w" -o gallery .
+cd ..
+python -m venv .venv
+# Linux/macOS: .venv/bin/python；Windows: .venv/Scripts/python.exe
+.venv/bin/python -m pip install -r backend/requirements.txt
+cd server
+ADMIN_USERNAME=admin ADMIN_PASSWORD=local-test PYTHON=../.venv/bin/python ./gallery
+# http://127.0.0.1:8000
 ```
 
-## QA 回归脚本
+Windows PowerShell 可使用 `scripts/dev.ps1`，它会在项目内准备工具依赖、构建并启动本地服务；首次执行前安装好 Go、Node.js 和 Python。
+
+开发前端时，在 `frontend/` 执行 `npm run dev`，默认将 API 和图片代理到 `127.0.0.1:8000`。生产页面由 Go 服务直接提供。
 
 ```bash
-python qa/check-compose.py       # compose 与 .env.example 契约
-python qa/unit-admin-env.py      # 环境变量解析/播种/同步（自包含）
-python qa/api-admin-http.py      # 端到端（需先起 8010 测试实例）
-python qa/concurrent-smoke.py    # 并发冒烟（需先起后端）
+cd server && go test ./... && go vet ./...
+cd ..
+python qa/regression.py
+python qa/check-compose.py
+python qa/memory-benchmark.py
 ```
 
-## 许可
+回归使用 `.qa-data` 内的独立临时数据，覆盖旧库迁移、权限、上传、标签、游标、配额、防御、导入、备份恢复和重启。内存测试额外需要 `psutil`，结果不包含浏览器、编译器和 Node 开发服务器。
 
-仅供个人学习与自部署使用。
+后台 14 个栏目的界面与功能验收、手机端设计修复及对应测试范围，见 [验收记录](docs/qa-review.md)。
+
+## 项目结构与发布
+
+```text
+server/               Go 服务、SQLite schema、默认配置、压缩档位
+backend/image_worker.py  按需图片处理，无常驻 Python Web 服务
+frontend/src/         原 Vue 页面、样式、主题与中英文案
+qa/                   HTTP 回归、部署契约、内存测试
+docs/                 架构说明、Docker Hub 介绍、历史规划
+scripts/              本地启动、文档同步、镜像发布
+Dockerfile            Vue 构建 → Go 构建 → Go + 按需 Pillow 运行环境
+```
+
+维护者发布流程见 [发布说明](docs/release.md)。`README.md` 是介绍的主源，执行 `python scripts/sync-docs.py` 生成 Docker Hub 版文档，发布时同步上传。构建镜像和更新 GitHub/Docker Hub 元数据需要维护者自己的登录授权。
+
+历史 `PLAN` 文档只记录旧版本设计，以当前源码和本 README 为准。
+
+## 使用范围
+
+沿用项目原有约定：仅供个人学习与自部署使用。仓库未新增开源许可证授权。

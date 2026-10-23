@@ -27,11 +27,12 @@ export const getPublicSettings = () =>
   fetch('/api/public/settings', { cache: 'no-store' }).then(json)
 export const getTags = () => fetch('/api/tags').then(json)
 
-export const getImages = ({ page = 1, limit = 36, sort = 'latest', tag = '', mine = false, token = '' } = {}) => {
-  const q = new URLSearchParams({ page, limit, sort })
+export const getImages = ({ page = 1, limit = 36, cursor = '', tag = '', mine = false, token = '', signal } = {}) => {
+  const q = new URLSearchParams({ page, limit })
+  if (cursor) q.set('cursor', cursor)
   if (tag) q.set('tag', tag)
   if (mine) q.set('mine', '1')
-  return fetch(`/api/images?${q}`, { headers: auth(token) }).then(json)
+  return fetch(`/api/images?${q}`, { headers: auth(token), signal }).then(json)
 }
 
 // ---------- 账号 ----------
@@ -45,14 +46,15 @@ export const login = (username, password, remember) =>
 export const logout = (token) =>
   fetch('/api/auth/logout', { method: 'POST', headers: auth(token) }).then(json)
 
-export const me = (token) => fetch('/api/auth/me', { headers: auth(token) }).then(json)
+export const me = (token, { noUnauth = false } = {}) =>
+  fetch('/api/auth/me', { headers: auth(token) }).then(r => json(r, { noUnauth }))
 
 export const changePassword = (token, oldPwd, newPwd) =>
   fetch('/api/auth/password', {
     method: 'POST',
     headers: { ...auth(token), 'Content-Type': 'application/json' },
     body: JSON.stringify({ old: oldPwd, new: newPwd }),
-  }).then(json)
+  }).then(r => json(r, { noUnauth: true }))
 
 // ---------- 随机图 ----------
 export const getRandom = (variant, token) =>
@@ -108,9 +110,6 @@ export const saveSettings = (token, patch) =>
     headers: { ...auth(token), 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
   }).then(json)
-
-export const reindex = (token) =>
-  fetch('/api/admin/reindex', { method: 'POST', headers: auth(token) }).then(json)
 
 // 本地图库：扫描 data/uploads 里未入库的原图（dryRun=true 只预览）
 export const scanLocal = (token, dryRun = true, limit = 50) =>
@@ -249,8 +248,9 @@ export async function copyText(text) {
     ta.value = text
     document.body.appendChild(ta)
     ta.select()
-    document.execCommand('copy')
+    const copied = document.execCommand('copy')
     ta.remove()
+    if (!copied) throw new Error(t('复制失败，请手动复制链接'))
     return true
   }
 }

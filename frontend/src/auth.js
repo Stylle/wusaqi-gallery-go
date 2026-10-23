@@ -61,14 +61,18 @@ export async function checkAuth() {
   const t = readToken()
   if (t) store.token = t
   store.authError = ''
+  const checkedToken = store.token
   if (store.token) {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        store.user = await api.me(store.token)
+        const user = await api.me(checkedToken, { noUnauth: true })
+        if (store.token !== checkedToken) return store.ok
+        store.user = user
         store.ok = true
         store.authError = ''
         break
       } catch (e) {
+        if (store.token !== checkedToken) return store.ok
         const status = e && e.status
         if (status === 401 || status === 403) {
           clearToken()
@@ -104,6 +108,7 @@ export async function doLogin(username, password, remember) {
   setToken(d.token, remember)
   store.user = d.user
   store.ok = true
+  store.checked = true
   return d
 }
 
@@ -113,11 +118,18 @@ export async function doLogout() {
 }
 
 export async function refreshMe() {
-  if (!store.token) return
+  const token = store.token
+  if (!token) return
   try {
-    store.user = await api.me(store.token)
+    const user = await api.me(token, { noUnauth: true })
+    if (store.token !== token) return
+    store.user = user
     store.ok = true
-  } catch { store.ok = false }
+  } catch (e) {
+    if (store.token !== token) return
+    if (e.status === 401 || e.status === 403) clearToken()
+    else store.ok = false
+  }
 }
 
 export async function loadSite() {

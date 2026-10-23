@@ -13,14 +13,16 @@ services:
       - ADMIN_SYNC=${ADMIN_SYNC:-0}
       - DATA_DIR=/data
       - RATE_LIMIT=${RATE_LIMIT:-120}
+      - TZ=${TZ:-Asia/Shanghai}
+      - GOMEMLIMIT=${GOMEMLIMIT:-40MiB}
+      - GOGC=${GOGC:-50}
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
     volumes:
       - ./data:/data
     ports:
       - "${WEB_PORT:-8300}:80"
     healthcheck:
-      # 经 nginx 全链路探活（反代→uvicorn→数据库）
-      test: ["CMD", "python", "-c",
-             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1/api/health', timeout=3).status==200 else 1)"]
+      test: ["CMD", "/app/gallery", "healthcheck"]
       interval: 15s
       timeout: 5s
       retries: 5
