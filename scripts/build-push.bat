@@ -6,17 +6,15 @@ setlocal enabledelayedexpansion
 set PREFIX=stylle
 if not "%IMAGE_PREFIX%"=="" set PREFIX=%IMAGE_PREFIX%
 
-set VERSION=dev
+set VERSION=
 for /f %%i in ('git rev-parse --short HEAD') do set VERSION=%%i
+if "%VERSION%"=="" goto :fail
+if "%PLATFORMS%"=="" set PLATFORMS=linux/amd64,linux/arm64
 
 set IMAGE=%PREFIX%/wusaqi-gallery
 
 echo ==^> Building %IMAGE%:%VERSION%
-docker build -t %IMAGE%:%VERSION% -t %IMAGE%:latest . || goto :fail
-
-echo ==^> Pushing (2 tags)
-docker push %IMAGE%:%VERSION% || goto :fail
-docker push %IMAGE%:latest || goto :fail
+docker buildx build --platform %PLATFORMS% -t %IMAGE%:%VERSION% -t %IMAGE%:latest --push . || goto :fail
 
 echo.
 echo Done. Deploy: docker compose -f docker-compose.hub.yml pull ^&^& up -d

@@ -2,6 +2,8 @@
 
 Run after building server/gallery[.exe] and frontend/dist:
     python qa/regression.py
+Or test the real image on a Linux Docker host (including WSL 2):
+    QA_DOCKER_IMAGE=wusaqi-gallery:local python qa/regression.py
 All data is disposable and isolated in .qa-data. No production credentials used.
 """
 import concurrent.futures
@@ -31,6 +33,28 @@ TEMP = ROOT / ".qa-data"
 TEMP.mkdir(exist_ok=True)
 passed = 0
 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def service_command(env, healthcheck=False):
+    image = os.environ.get("QA_DOCKER_IMAGE")
+    if not image:
+        return [str(BIN)] + (["healthcheck"] if healthcheck else [])
+    if sys.platform != "linux":
+        raise RuntimeError("Container regression must run on the Linux Docker host (WSL is supported)")
+    port = env["LISTEN_ADDR"].rsplit(":", 1)[1]
+    name = "wusaqi-regression-" + port
+    if healthcheck:
+        return ["docker", "exec", name, "/app/gallery", "healthcheck"]
+    # Host networking lets the isolated service reach the test webhook server.
+    # Only disposable test data is mounted, at the same path for import tests.
+    command = ["docker", "run", "--rm", "--name", name, "--network", "host",
+               "--mount", f"type=bind,source={env['DATA_DIR']},target={env['DATA_DIR']}"]
+    for key, flag in (("QA_DOCKER_PLATFORM", "--platform"), ("QA_DOCKER_MEMORY", "--memory"), ("QA_DOCKER_CPUS", "--cpus")):
+        if os.environ.get(key):
+            command += [flag, os.environ[key]]
+    for key in ("DATA_DIR", "LISTEN_ADDR", "ADMIN_USERNAME", "ADMIN_PASSWORD", "ADMIN_SYNC", "TRUSTED_PROXIES"):
+        command += ["--env", key + "=" + env[key]]
+    return command + [image]
 
 
 def check(name, condition):
@@ -73,7 +97,7 @@ def run(data, legacy_python=None, legacy_backend=None):
            "ADMIN_USERNAME": "owner", "ADMIN_PASSWORD": "qa-pass-123", "ADMIN_SYNC": "0",
            "TRUSTED_PROXIES": "127.0.0.1/32", "PYTHON": sys.executable}
     log = open(data / "qa-server.log", "ab")
-    command = [str(BIN)]
+    command = service_command(env)
     cwd = ROOT
     if legacy_python:
         command = [str(legacy_python), "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port)]
@@ -90,21 +114,29 @@ def run(data, legacy_python=None, legacy_backend=None):
             h["Authorization"] = "Bearer " + token
         req = urllib.request.Request(base + path, data=body, headers=h, method=method)
         try:
-            res = opener.open(req, timeout=60)
+            res = opener.open(req, timeout=float(os.environ.get("QA_REQUEST_TIMEOUT", "60")))
         except urllib.error.HTTPError as e:
             res = e
         with res:
             content = res.read()
             return res.status, content if raw else json.loads(content or b"{}")
 
-    for _ in range(100):
+    deadline = time.monotonic() + float(os.environ.get("QA_STARTUP_TIMEOUT", "30"))
+    ready = False
+    while time.monotonic() < deadline:
         if proc.poll() is not None:
-            raise RuntimeError((data / "qa-server.log").read_text(errors="replace"))
+            break
         try:
             if call("GET", "/api/health")[0] == 200:
+                ready = True
                 break
         except OSError:
             time.sleep(.1)
+    if not ready:
+        proc.terminate()
+        proc.wait(timeout=20)
+        log.close()
+        raise RuntimeError("Service did not become ready:\n" + (data / "qa-server.log").read_text(errors="replace"))
     return proc, log, call, env
 
 
@@ -376,7 +408,7 @@ def suite(data):
         with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
             statuses = list(pool.map(lambda _: call("GET", "/api/images?limit=12")[0], range(160)))
         check("concurrent reads remain healthy", set(statuses) == {200})
-        check("healthcheck subcommand supports configured listen address", subprocess.run([str(BIN), "healthcheck"], env=env, capture_output=True).returncode == 0)
+        check("healthcheck subcommand supports configured listen address", subprocess.run(service_command(env, healthcheck=True), env=env, capture_output=True).returncode == 0)
         proc.terminate()
         proc.wait(timeout=10)
         log.close()
