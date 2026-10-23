@@ -1,6 +1,6 @@
 # 架构评估与内存验证
 
-本文评估的是当前项目的功能、数据兼容和常驻内存，不把上传压缩峰值当作常驻占用。用户提供的旧 Docker 部署约 176 MB 是生产观测；本次本地测试是 Windows 进程工作集，二者不能直接相减计算优化比例。
+本文评估的是当前项目的功能、数据兼容和常驻内存，不把上传压缩峰值当作常驻占用。用户提供的旧 Docker 部署约 176 MB 是生产观测；下文分别记录 Windows 进程工作集和 WSL 2 中的真实 Docker cgroup 测量，不跨环境直接相减计算优化比例。
 
 ## 原实现中的开销
 
@@ -70,9 +70,37 @@
 
 原始输出由 `qa/memory-benchmark.py` 保存到本地 `artifacts/memory-windows.json`；本次结果也保存在 [Go 原始记录](benchmarks/windows-go.json) 和 [旧 Python 对照记录](benchmarks/windows-legacy.json)。旧服务可用 `--legacy-python` 和 `--legacy-backend` 指向独立的旧代码与解释器复测。
 
-## Docker 验收方式
+## Docker 容器实测
 
-当前尚未构建或发布新版容器，**没有 Docker 内存实测数字**。Linux amd64/arm64 交叉编译通过只说明编译兼容，不等于容器运行验证。
+2026-10-23 在本机 WSL 2（Linux 6.18.33.2）、Docker Engine 29.9.2、cgroup v2 中构建并运行实际部署镜像。amd64 镜像通过全部 89 项 HTTP 回归；arm64 镜像通过 QEMU 执行的 12 项检查，覆盖页面、旧账号与数据、上传、三种图片链接、配置、备份、健康检查和重启。ARM 模拟结果只用于功能兼容验证，不代表真实 ARM 主机性能或内存。
+
+与 Windows 测试相同的数据与负载：10,000 条元数据、83 个实际文件、16 并发、1024 次请求，以及一张 3500×2200 BMP。Docker 占用按照 `memory.current - inactive_file` 计算，与 Docker CLI 的 Linux 缓存扣除口径一致；CLI 在相邻时刻采样会有少量差异。
+
+| 阶段 | 默认资源 Docker 占用（MiB） | 1 核 / 512 MiB 限制 Docker 占用（MiB） |
+| --- | ---: | ---: |
+| 空闲 | 10.52 | 10.05 |
+| 浏览压力后 | 15.28 | 13.53 |
+| 上传完成后 5 秒中位数 | 14.98 | 13.88 |
+| 上传时峰值，单独计量 | 121.01 | 112.23 |
+
+默认资源下服务进程 RSS 为 18.66 / 23.32 / 23.09 MiB；1 核 / 512 MiB 下为 17.65 / 22.21 / 22.36 MiB。两组均观察到一个临时图片子进程，处理完成后无残留。原始记录包含 cgroup anonymous/file memory 和 `docker stats` 输出：[默认资源](benchmarks/docker-amd64.json)、[1 核 / 512 MiB](benchmarks/docker-amd64-512m.json)。
+
+测试数据通过 WSL 的 Windows 磁盘挂载进入容器。生产 Linux 文件系统、文件缓存归属、CPU 数量和图像尺寸会影响结果，以上不是所有平台都固定为 10–15 MiB 的保证。WSL、Docker daemon 和浏览器自身的内存不计入应用容器。
+
+## Docker 验收复现
+
+Linux Docker 主机（包括 WSL 2）安装测试依赖后，可自动复现：
+
+```bash
+python -m pip install -r backend/requirements.txt psutil pyyaml
+docker build -t wusaqi-gallery:local .
+QA_DOCKER_IMAGE=wusaqi-gallery:local python qa/regression.py
+QA_DOCKER_IMAGE=wusaqi-gallery:local python qa/container-memory.py
+QA_DOCKER_IMAGE=wusaqi-gallery:local QA_DOCKER_CPUS=1 QA_DOCKER_MEMORY=512m \
+  python qa/container-memory.py
+```
+
+脚本只使用 `.qa-data` 下的独立临时数据，默认不使用业务数据；报告写入 `artifacts/memory-docker.json`。功能测试使用 host 网络，以便容器访问本机 Webhook 接收器；不改变部署 Compose 的网络设置。
 
 构建后，先启动独立测试数据卷，再分别观察空闲、浏览压力和上传结束后的占用：
 

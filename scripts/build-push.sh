@@ -8,14 +8,11 @@ set -euo pipefail
 
 PREFIX="${IMAGE_PREFIX:-stylle}"
 IMAGE="${PREFIX}/wusaqi-gallery"
-VERSION="$(git rev-parse --short HEAD 2>/dev/null || echo dev)"
+VERSION="$(git rev-parse --short HEAD)"
+PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 
 echo "==> 构建 ${IMAGE}:${VERSION}"
-docker build -t "${IMAGE}:${VERSION}" -t "${IMAGE}:latest" .
-
-echo "==> 推送（2 个标签）"
-docker push "${IMAGE}:${VERSION}"
-docker push "${IMAGE}:latest"
+docker buildx build --platform "$PLATFORMS" -t "${IMAGE}:${VERSION}" -t "${IMAGE}:latest" --push .
 
 echo
 echo "✅ 完成。部署端拉取升级："

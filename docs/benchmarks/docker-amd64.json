@@ -1,0 +1,112 @@
+{
+  "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "engine": "go-docker",
+  "image": "wusaqi-gallery:local",
+  "image_id": "sha256:96ad61f84cc65f8086fb5935e8e8358cab76b3ac724cff94f73a2c6d638600fb",
+  "architecture": "amd64",
+  "image_size_bytes": 238281716,
+  "cgroup": "v2",
+  "metric": "MiB; Docker usage = memory.current - inactive_file; RSS reported separately",
+  "library_metadata_rows": 10000,
+  "real_fixture_files_before_upload": 83,
+  "requests": 1024,
+  "concurrency": 16,
+  "idle": {
+    "docker_usage_mib": 10.52,
+    "cgroup_current_mib": 10.55,
+    "anonymous_mib": 8.3,
+    "file_cache_mib": 0.04,
+    "inactive_file_mib": 0.03,
+    "process_tree_rss_mib": 18.66
+  },
+  "after_browsing": {
+    "docker_usage_mib": 15.28,
+    "cgroup_current_mib": 15.32,
+    "anonymous_mib": 12.29,
+    "file_cache_mib": 0.04,
+    "inactive_file_mib": 0.04,
+    "process_tree_rss_mib": 23.32
+  },
+  "upload_peak_docker_usage_mib": 121.01,
+  "upload_peak_process_tree_rss_mib": 135.67,
+  "image_worker_processes_observed": 1,
+  "persistent_image_workers": [],
+  "post_upload_median_docker_usage_mib": 14.98,
+  "post_upload_samples": [
+    {
+      "docker_usage_mib": 15.11,
+      "cgroup_current_mib": 15.15,
+      "anonymous_mib": 12.05,
+      "file_cache_mib": 0.05,
+      "inactive_file_mib": 0.04,
+      "process_tree_rss_mib": 23.09
+    },
+    {
+      "docker_usage_mib": 15.09,
+      "cgroup_current_mib": 15.12,
+      "anonymous_mib": 12.05,
+      "file_cache_mib": 0.05,
+      "inactive_file_mib": 0.04,
+      "process_tree_rss_mib": 23.09
+    },
+    {
+      "docker_usage_mib": 14.98,
+      "cgroup_current_mib": 15.02,
+      "anonymous_mib": 12.05,
+      "file_cache_mib": 0.05,
+      "inactive_file_mib": 0.04,
+      "process_tree_rss_mib": 23.09
+    },
+    {
+      "docker_usage_mib": 14.98,
+      "cgroup_current_mib": 15.02,
+      "anonymous_mib": 12.05,
+      "file_cache_mib": 0.05,
+      "inactive_file_mib": 0.04,
+      "process_tree_rss_mib": 23.09
+    },
+    {
+      "docker_usage_mib": 14.98,
+      "cgroup_current_mib": 15.02,
+      "anonymous_mib": 12.05,
+      "file_cache_mib": 0.05,
+      "inactive_file_mib": 0.04,
+      "process_tree_rss_mib": 23.09
+    }
+  ],
+  "docker_stats": {
+    "idle": {
+      "BlockIO": "0B / 0B",
+      "CPUPerc": "0.00%",
+      "Container": "wusaqi-regression-40513",
+      "ID": "36ffc1ce0006",
+      "MemPerc": "0.06%",
+      "MemUsage": "10.22MiB / 15.56GiB",
+      "Name": "wusaqi-regression-40513",
+      "NetIO": "0B / 0B",
+      "PIDs": "8"
+    },
+    "after_browsing": {
+      "BlockIO": "0B / 0B",
+      "CPUPerc": "0.00%",
+      "Container": "wusaqi-regression-40513",
+      "ID": "36ffc1ce0006",
+      "MemPerc": "0.10%",
+      "MemUsage": "15.21MiB / 15.56GiB",
+      "Name": "wusaqi-regression-40513",
+      "NetIO": "0B / 0B",
+      "PIDs": "15"
+    },
+    "after_upload": {
+      "BlockIO": "0B / 0B",
+      "CPUPerc": "0.00%",
+      "Container": "wusaqi-regression-40513",
+      "ID": "36ffc1ce0006",
+      "MemPerc": "0.09%",
+      "MemUsage": "14.98MiB / 15.56GiB",
+      "Name": "wusaqi-regression-40513",
+      "NetIO": "0B / 0B",
+      "PIDs": "15"
+    }
+  }
+}

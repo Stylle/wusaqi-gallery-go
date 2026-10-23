@@ -1,17 +1,19 @@
 # syntax=docker/dockerfile:1
-FROM node:22-slim AS frontend-build
+FROM --platform=$BUILDPLATFORM node:22-slim AS frontend-build
 WORKDIR /src
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --no-fund --no-audit
 COPY frontend/ ./
 RUN npm run build
 
-FROM golang:1.27-bookworm AS server-build
+FROM --platform=$BUILDPLATFORM golang:1.27-bookworm AS server-build
+ARG TARGETOS
+ARG TARGETARCH
 WORKDIR /src
 COPY server/go.mod server/go.sum ./
 RUN go mod download
 COPY server/ ./
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /gallery .
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /gallery .
 
 # Python exists only for one-shot Pillow jobs. No Python web server, nginx,
 # supervisor, or idle image worker is started in the running container.

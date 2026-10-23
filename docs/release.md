@@ -42,7 +42,7 @@ python scripts/sync-docs.py
 
 ## 构建与推送
 
-已有脚本面向当前平台构建，同时推送 Git 短哈希与 `latest`：
+已有脚本默认构建 `linux/amd64,linux/arm64`，同时推送 Git 短哈希与 `latest`；需要支持多平台的 Buildx 构建器。只构建单平台时可显式设置 `PLATFORMS=linux/amd64`，不要无意覆盖已经发布的多架构 `latest`：
 
 ```bash
 docker login -u stylle
@@ -59,5 +59,16 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 ```
 
 先用本地标签完成容器健康检查和内存验收，再运行含 `--push` 的命令。推送后验证镜像标签、目标平台、健康检查与实际拉取。
+
+Linux Docker 主机上的实际容器检查：
+
+```bash
+QA_DOCKER_IMAGE=wusaqi-gallery:local python qa/regression.py
+QA_DOCKER_IMAGE=wusaqi-gallery:local python qa/container-memory.py
+QA_DOCKER_IMAGE=wusaqi-gallery:multi QA_DOCKER_PLATFORM=linux/arm64 \
+  QA_STARTUP_TIMEOUT=120 QA_REQUEST_TIMEOUT=180 python qa/container-smoke.py
+```
+
+本次 Windows 构建机使用 WSL 2 中的专用 `wusaqi-build` Ubuntu 和 Docker Engine；PowerShell 可通过 `wsl -d wusaqi-build -u root -- docker version` 检查环境。项目的本地预览仍使用 `http://127.0.0.1:8010`，现由真实容器运行。WSL 的系统组件和 Docker daemon 占用不属于应用容器的常驻内存。
 
 Docker Hub Overview 上传 `docs/dockerhub-description.md` 的完整内容，short description 使用上文建议；GitHub About 同步更新。凭据不足时保留已生成的介绍文件，不能把本地生成冒充线上更新。
