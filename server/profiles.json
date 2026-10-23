@@ -1,0 +1,35 @@
+{
+  "tiny": {
+    "label": "轻量方案",
+    "desc": "1 核 / 1GB 级：低配 VPS、软路由、树莓派",
+    "quality": 72,
+    "max_width": 1600,
+    "method": 2,
+    "max_pixels": 40,
+    "concurrency": 1,
+    "thumb_quality": 70,
+    "thumb_method": 2
+  },
+  "small": {
+    "label": "均衡方案",
+    "desc": "2 核 / 2~3GB：入门 VPS、家用小主机",
+    "quality": 78,
+    "max_width": 2048,
+    "method": 4,
+    "max_pixels": 60,
+    "concurrency": 1,
+    "thumb_quality": 76,
+    "thumb_method": 4
+  },
+  "normal": {
+    "label": "标准方案",
+    "desc": "4 核 / 4GB+：NAS、独立服务器、本地电脑",
+    "quality": 82,
+    "max_width": 2560,
+    "method": 6,
+    "max_pixels": 120,
+    "concurrency": 2,
+    "thumb_quality": 78,
+    "thumb_method": 4
+  }
+}

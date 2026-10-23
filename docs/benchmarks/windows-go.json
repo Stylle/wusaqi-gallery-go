@@ -1,0 +1,44 @@
+{
+  "platform": "Windows-11-10.0.22621-SP0",
+  "metric": "process RSS / Windows working set; MiB; not Docker cgroup",
+  "engine": "go",
+  "library_metadata_rows": 10000,
+  "real_fixture_files_before_upload": 83,
+  "requests": 1024,
+  "concurrency": 16,
+  "idle": {
+    "rss_mib": 18.78,
+    "private_mib": 55.25
+  },
+  "after_browsing": {
+    "rss_mib": 25.39,
+    "private_mib": 61.76
+  },
+  "upload_process_tree_peak_mib": 142.81,
+  "image_worker_processes_observed": 2,
+  "persistent_image_workers": [],
+  "post_upload_median_rss_mib": 25.85,
+  "post_upload_samples": [
+    {
+      "rss_mib": 25.85,
+      "private_mib": 61.87
+    },
+    {
+      "rss_mib": 25.85,
+      "private_mib": 61.87
+    },
+    {
+      "rss_mib": 25.85,
+      "private_mib": 61.87
+    },
+    {
+      "rss_mib": 25.85,
+      "private_mib": 61.87
+    },
+    {
+      "rss_mib": 25.85,
+      "private_mib": 61.87
+    }
+  ],
+  "docker_measurement": "pending container build and test"
+}

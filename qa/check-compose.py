@@ -1,4 +1,4 @@
-"""V4：docker-compose 环境变量契约检查（本机没装 docker，用 YAML 解析代替）。"""
+"""Validate the Go single-service deployment contract without a Docker daemon."""
 import os
 import re
 import sys
@@ -40,8 +40,9 @@ def main():
     check("ADMIN_PASSWORD 允许留空（回落 changeme）", "ADMIN_PASSWORD=${ADMIN_PASSWORD:-}" in raw)
 
     # 后端读取的变量必须和 compose 声明的一致
-    cfg = open(os.path.join(ROOT, "backend", "app", "config.py"), encoding="utf-8").read()
-    used = set(re.findall(r'(?:environ\.get|_flag)\("([A-Z_]+)"', cfg))
+    cfg = "\n".join(open(os.path.join(ROOT, "server", name), encoding="utf-8").read()
+                    for name in os.listdir(os.path.join(ROOT, "server")) if name.endswith(".go"))
+    used = set(re.findall(r'(?:env|Getenv)\("([A-Z_]+)"', cfg))
     for k in ("ADMIN_USERNAME", "ADMIN_PASSWORD", "ADMIN_SYNC"):
         check(f"后端读取 {k}", k in used, str(sorted(used)))
 
@@ -53,6 +54,13 @@ def main():
             continue
         k = e.split("=", 1)[0]
         check(f".env.example 含 {k}", k in env_keys, str(sorted(env_keys)))
+
+    check("Go healthcheck", compose["services"]["gallery"]["healthcheck"]["test"] == ["CMD", "/app/gallery", "healthcheck"])
+    hub = yaml.safe_load(open(os.path.join(ROOT, "docker-compose.hub.yml"), encoding="utf-8"))
+    check("Hub healthcheck matches", hub["services"]["gallery"]["healthcheck"]["test"] == ["CMD", "/app/gallery", "healthcheck"])
+    dockerfile = open(os.path.join(ROOT, "Dockerfile"), encoding="utf-8").read()
+    check("Go is container entrypoint", 'ENTRYPOINT ["/app/gallery"]' in dockerfile)
+    check("No resident Python web stack", "supervisord" not in dockerfile and "uvicorn" not in dockerfile)
 
     print(f"\n===== {passed} passed, {failed} failed =====")
     return 1 if failed else 0

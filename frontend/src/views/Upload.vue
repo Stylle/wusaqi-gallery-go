@@ -1,7 +1,7 @@
 <script setup>
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import { uploadOne, getTags, copyText, fmtSize } from '../api.js'
-import { store, doLogout } from '../auth.js'
+import { store } from '../auth.js'
 import { absUrl, defaultUploadTags, site } from '../site.js'
 import { t } from '../i18n.js'
 
@@ -10,9 +10,12 @@ const over = ref(false)
 const fileInput = ref(null)
 const queue = ref([])          // {id,name,status,progress,item,error,preview}
 const tags = ref([])
+const tagOptions = computed(() => [...new Set([
+  ...(site.site_tags || '').split(',').map(x => x.trim()).filter(Boolean),
+  ...tags.value,
+])])
 const tag = ref('')
 const customTag = ref('')
-const busy = computed(() => queue.value.some(e => e.status === 'uploading'))
 
 const quota = computed(() => {
   const u = store.user
@@ -29,7 +32,7 @@ const quota = computed(() => {
 const full = computed(() => quota.value && quota.value.left === 0)
 
 // 单图上限：管理员不限；普通用户 用户级覆盖 > 全局设置（后端算好下发）
-const upLimit = computed(() => store.user?.maxUploadMb || Number(site.upload_max_mb) || 0)
+const upLimit = computed(() => store.user?.maxUploadMb ?? Number(site.upload_max_mb) ?? 0)
 // 今日张数（未配置上限则不限）
 const daily = computed(() => {
   const u = store.user
@@ -73,16 +76,18 @@ async function handleFiles(files) {
       })
       continue
     }
-    const entry = {
+    const entry = reactive({
       id: Math.random(), name: f.name || 'clipboard.png', status: 'uploading',
       progress: 0, item: null, error: '', preview: URL.createObjectURL(f),
-    }
+    })
     queue.value.unshift(entry)
     try {
       const d = await uploadOne(store.token, f, activeTag.value, (p) => { entry.progress = p })
       entry.item = d.results[0].item
       entry.status = 'done'
-      if (d.usage) Object.assign(store.user, d.usage)   // 刷新配额
+      URL.revokeObjectURL(entry.preview)
+      entry.preview = ''
+      if (d.usage && store.user) Object.assign(store.user, d.usage)
     } catch (e) {
       entry.status = 'error'
       entry.error = e.message
@@ -113,8 +118,10 @@ function onPaste(e) {
 }
 
 async function copyItem(it, which) {
-  await copyText(absUrl(which === 'thumb' ? it.thumb : (which === 'original' ? it.url : it.compressed)))
-  msg.value = t('已复制链接')
+  const path = which === 'thumb' ? it.thumb : (which === 'original' ? it.url : it.compressed)
+  if (!path) { msg.value = t('该图没有这个版本'); return }
+  try { await copyText(absUrl(path)); msg.value = t('已复制链接') }
+  catch (e) { msg.value = e.message }
   setTimeout(() => { msg.value = '' }, 1500)
 }
 
@@ -122,7 +129,10 @@ onMounted(() => {
   loadTags()
   window.addEventListener('paste', onPaste)
 })
-onUnmounted(() => window.removeEventListener('paste', onPaste))
+onUnmounted(() => {
+  window.removeEventListener('paste', onPaste)
+  queue.value.forEach(entry => { if (entry.preview) URL.revokeObjectURL(entry.preview) })
+})
 </script>
 
 <template>
@@ -150,7 +160,7 @@ onUnmounted(() => window.removeEventListener('paste', onPaste))
       <div class="row" style="margin:0;gap:8px;align-items:center">
         <span class="muted">{{ t('标签') }}</span>
         <span class="tag-chip" :class="{ on: !activeTag }" @click="tag = ''; customTag = ''">{{ t('无') }}</span>
-        <span v-for="tg in tags" :key="tg" class="tag-chip" :class="{ on: activeTag === tg }"
+        <span v-for="tg in tagOptions" :key="tg" class="tag-chip" :class="{ on: activeTag === tg }"
           @click="customTag = ''; tag = (tag === tg ? '' : tg)">{{ tg }}</span>
         <input v-model="customTag" :placeholder="t('自定义标签…')" style="max-width:150px;padding:5px 10px" />
         <span class="muted" v-if="defaultUploadTags().length" style="font-size:12px">
@@ -159,8 +169,9 @@ onUnmounted(() => window.removeEventListener('paste', onPaste))
       </div>
     </div>
 
-    <div class="drop" :class="{ over, dis: blocked }"
+    <div class="drop" :class="{ over, dis: blocked }" role="button" :tabindex="blocked ? -1 : 0" :aria-disabled="blocked"
       @click="!blocked && fileInput.click()"
+      @keydown.enter.prevent="!blocked && fileInput.click()" @keydown.space.prevent="!blocked && fileInput.click()"
       @dragover.prevent="over = true" @dragleave="over = false" @drop.prevent="onDrop">
       <div v-if="!blocked">
         {{ t('拖拽图片到这里 / 点击选择 /') }} <b>Ctrl+V {{ t('直接粘贴上传') }}</b>
@@ -204,7 +215,7 @@ onUnmounted(() => window.removeEventListener('paste', onPaste))
           </div>
           <div class="mono muted" v-if="e.item" style="margin-top:4px;display:flex;gap:10px;flex-wrap:wrap">
             <span>{{ e.item.filename }}</span>
-            <a href="javascript:void 0" @click="copyItem(e.item, 'compressed')">{{ t('复制压缩图') }}</a>
+            <a v-if="e.item.compressed" href="javascript:void 0" @click="copyItem(e.item, 'compressed')">{{ t('复制压缩图') }}</a>
             <a href="javascript:void 0" @click="copyItem(e.item, 'original')">{{ t('复制原图') }}</a>
             <a href="javascript:void 0" @click="copyItem(e.item, 'thumb')">{{ t('复制缩略图') }}</a>
           </div>

@@ -8,6 +8,21 @@ export const i18n = reactive({
 })
 
 const EN = {
+  '正在验证登录…': 'Checking your session…',
+  '有未保存的修改': 'You have unsaved changes',
+  '请先保存通知设置再发送测试': 'Save notification settings before sending a test',
+  '新窗口打开': 'Open in a new tab',
+  '查看图片': 'View image',
+  '请填写有效数字：': 'Enter a valid number: ',
+  '自定义方案': 'Custom profile',
+  '复制失败，请手动复制链接': 'Could not copy. Please copy the link manually.',
+  '正在加载…': 'Loading…',
+  '已经到底了': 'You have reached the end',
+  '重试加载': 'Retry loading',
+  '编辑标签': 'Edit tag',
+  '留空可移除标签': 'Leave blank to remove the tag',
+  '标签已更新': 'Tag updated',
+  '逗号分隔，作为上传候选；画廊只显示有图片的标签': 'Comma-separated upload suggestions; the gallery only shows tags assigned to images',
   '画廊': 'Gallery',
   '随机图': 'Random',
   '上传': 'Upload',

@@ -36,13 +36,13 @@ async function submit() {
       <p class="muted" style="margin-top:-6px">{{ t('登录后可上传图片、复制链接与使用随机图 API。') }}</p>
 
       <div class="field">
-        <label>{{ t('用户名') }}</label>
-        <input v-model="username" autocomplete="username" placeholder="username" @keyup.enter="submit" />
+        <label for="login-username">{{ t('用户名') }}</label>
+        <input id="login-username" v-model="username" autocomplete="username" placeholder="username" @keyup.enter="submit" />
       </div>
 
       <div class="field">
-        <label>{{ t('密码') }}</label>
-        <input v-model="password" type="password" autocomplete="current-password"
+        <label for="login-password">{{ t('密码') }}</label>
+        <input id="login-password" v-model="password" type="password" autocomplete="current-password"
           placeholder="password" @keyup.enter="submit" />
       </div>
 

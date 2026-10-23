@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 构建并推送 wusaqi-gallery 单容器镜像到 Docker Hub
-# （nginx + uvicorn 同容器；双容器旧方案已废弃）。
+# Go 单进程服务，Pillow 仅按需启动。
 # 用法（在仓库根目录、已 docker login 的机器上）：
 #   bash scripts/build-push.sh              # 推 latest + git 短哈希双标签
 #   IMAGE_PREFIX=myuser bash scripts/build-push.sh   # 自定义命名空间

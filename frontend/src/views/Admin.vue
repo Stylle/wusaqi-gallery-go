@@ -9,7 +9,7 @@ import {
   getBackupStats, downloadBackup, restoreBackup,
 } from '../api.js'
 import { store, isAdmin, refreshMe, ensureAuth, clearToken } from '../auth.js'
-import { setSite } from '../site.js'
+import { setSite, applySite } from '../site.js'
 import { t } from '../i18n.js'
 
 // 统一的错误文案：401 不再裸露 "login required"
@@ -23,7 +23,7 @@ const groups = [
     { id: 'site', label: '🏷️ 站点与外观', fields: [
       { k: 'site_title', label: '站点标题', hint: '浏览器标签页与顶栏显示' },
       { k: 'site_icon', label: '站点图标', hint: '填图片 URL 或单个 emoji（如 🌶️）；留空使用默认 logo' },
-      { k: 'site_tags', label: '标签池', hint: '逗号分隔，作为顶部筛选项与上传可选项' },
+      { k: 'site_tags', label: '标签池', hint: '逗号分隔，作为上传候选；画廊只显示有图片的标签' },
       { k: 'site_footer', label: '底部文字', hint: '页脚展示，可留空隐藏' },
       { k: 'theme_style', label: '配色风格', type: 'select',
         options: [{ v: 'solid', label: '纯色' }, { v: 'gradient', label: '炫彩' }],
@@ -79,6 +79,11 @@ const groups = [
 const active = ref('site')
 const menuOpen = ref(false)
 const s = ref(null)
+const saved = ref({})
+const loadError = ref('')
+const dirty = computed(() => !!s.value && Object.keys(s.value).some(k => s.value[k] !== saved.value[k]))
+const notifyDirty = computed(() => !!s.value && Object.keys(s.value).some(k =>
+  (k.startsWith('notify_') || k === 'webhook_url') && s.value[k] !== saved.value[k]))
 const msg = ref('')
 const msgBad = ref(false)
 const saveBusy = ref(false)
@@ -105,6 +110,7 @@ const bk = ref(null)
 const bkMsg = ref('')
 const bkBusy = ref(false)
 const restoreFile = ref(null)
+const restoreInput = ref(null)
 const restoreName = ref('')
 const restoreMsg = ref('')
 const restoreBusy = ref(false)
@@ -112,6 +118,7 @@ const users = ref([])
 const uMsg = ref('')
 const form = ref(blankForm())
 const editing = ref('')     // 空 = 新建
+const userBusy = ref(false)
 
 // ---- 本地图库（扫描导入 / 补压缩）----
 const localInfo = ref(null)
@@ -155,7 +162,8 @@ const profileOptions = computed(() => {
 })
 
 async function loadSystem() {
-  try { sys.value = await getSystem(store.token) } catch { /* 后端未更新时忽略 */ }
+  try { sys.value = await getSystem(store.token) }
+  catch (e) { showToast(t('失败：') + errText(e), false) }
 }
 
 async function loadStats() {
@@ -167,6 +175,7 @@ async function loadStats() {
 }
 
 async function sendTestNotify() {
+  if (notifyBusy.value || notifyDirty.value) return
   notifyBusy.value = true
   notifyMsg.value = t('发送中…')
   try {
@@ -181,12 +190,12 @@ async function sendTestNotify() {
   } finally { notifyBusy.value = false }
 }
 
-async function previewLocal() {
+async function previewLocal(preserveMessage = false) {
   localBusy.value = true
-  localMsg.value = t('扫描中…')
+  if (preserveMessage !== true) localMsg.value = t('扫描中…')
   try {
     localInfo.value = await scanLocal(store.token, true, 50)
-    localMsg.value = `${t('扫描')} ${localInfo.value.scanned} · ${t('已在库')} ${localInfo.value.indexed} · `
+    if (preserveMessage !== true) localMsg.value = `${t('扫描')} ${localInfo.value.scanned} · ${t('已在库')} ${localInfo.value.indexed} · `
       + `${t('待导入')} ${localInfo.value.pendingCount} · ${t('无法识别')} ${localInfo.value.invalidCount}`
   } catch (e) {
     localMsg.value = t('失败：') + e.message
@@ -224,11 +233,11 @@ async function pollImport() {
     if (j.startedAt) {                    // 跑过至少一轮才汇报结果
       const extra = j.failed ? `，${t('失败')} ${j.failed} ${t('张（已进入重试队列）')}` : ''
       const retried = j.retried ? `，${t('自动重试')} ${j.retried} ${t('次')}` : ''
-      localMsg.value = j.cancel
+      localMsg.value = j.errors?.length ? t('失败：') + j.errors.join('; ') : j.cancel
         ? `${t('已取消：已导入')} ${j.imported} ${t('张')}${extra}`
         : `${t('导入完成')} ${j.imported} ${t('张')}${retried}${extra}`
     }
-    await previewLocal()
+    await previewLocal(true)
     await refreshMe()
   } catch { /* 轮询偶发失败，等下一轮 */ }
 }
@@ -302,29 +311,40 @@ onMounted(async () => {
   if (!isAdmin.value) return
   try {
     s.value = await getSettings(store.token)
+    saved.value = { ...s.value }
   } catch (e) {
-    msg.value = t('失败：') + errText(e)
+    loadError.value = t('失败：') + errText(e)
     return
   }
-  loadSystem()
-  loadBans()
-  loadBackup()
-  loadUsers()
-  loadStats()
-  previewLocal()
-  previewCompress()
-  // 若有导入任务在跑（刷新页面后回来），无缝接上进度轮询
-  localImportStatus(store.token).then((j) => {
-    if (j.running) {
-      localJob.value = j
-      localBusy.value = true
-      clearInterval(localTimer)
-      localTimer = setInterval(pollImport, 1500)
-    }
-  }).catch(() => {})
+  loadPanel(active.value)
 })
 
-onUnmounted(() => { if (localTimer) clearInterval(localTimer) })
+onUnmounted(() => {
+  clearInterval(localTimer)
+  clearTimeout(toastTimer)
+  applySite()
+})
+
+async function loadPanel(id) {
+  if (!s.value) return
+  if (id === 'compress') await loadSystem()
+  if (id === 'users') await loadUsers()
+  if (id === 'stats') await loadStats()
+  if (id === 'bans') await loadBans()
+  if (id === 'backup') await loadBackup()
+  if (id === 'local') {
+    try {
+      const j = await localImportStatus(store.token)
+      localJob.value = j
+      if (j.running) {
+        localBusy.value = true
+        clearInterval(localTimer)
+        localTimer = setInterval(pollImport, 1500)
+        await pollImport()
+      } else await Promise.all([previewLocal(), previewCompress()])
+    } catch (e) { localMsg.value = t('失败：') + errText(e) }
+  }
+}
 
 // 切换左侧菜单时清掉上一页残留的提示，否则旧的「失败：…」会一直挂在新面板上
 watch(active, (id) => {
@@ -334,8 +354,7 @@ watch(active, (id) => {
   compMsg.value = ''
   statsMsg.value = ''
   rulesMsg.value = ''
-  if (id === 'bans') loadBans()
-  if (id === 'backup') loadBackup()
+  loadPanel(id)
 })
 
 async function loadBans() {
@@ -492,13 +511,26 @@ watch(() => s.value?.theme_style, (v) => {
 async function save() {
   if (saveBusy.value) return
   if (!store.token) { msg.value = t('登录已失效，请重新登录'); showToast(msg.value, false); return }
+  const numeric = groups.flatMap(g => g.items).flatMap(group => (group.fields || [])
+    .filter(field => field.type === 'number').map(field => [field.k, field.label]))
+  numeric.push(['comp_quality', '质量 (1-100)'], ['comp_max_width', '最大宽度 px (0=不缩放)'],
+    ['comp_method', 'webp 编码强度 (0-6)'], ['comp_max_pixels', '单图分辨率上限 (MP，0=不限)'], ['comp_concurrency', '压缩并发数 (1-8)'])
+  for (const [key, label] of numeric) {
+    if (s.value[key] === '' || !Number.isFinite(Number(s.value[key]))) {
+      msgBad.value = true
+      msg.value = t('请填写有效数字：') + t(label)
+      showToast(msg.value, false)
+      return
+    }
+  }
   saveBusy.value = true
   msgBad.value = false
   msg.value = t('保存中…')
   try {
     s.value = await saveSettings(store.token, s.value)
+    saved.value = { ...s.value }
     setSite(await getPublicSettings())
-    await loadSystem()
+    if (active.value === 'compress') await loadSystem()
     // 压缩参数类才有「对新上传生效」的说法，其余面板只说已保存
     msg.value = ['compress', 'limits'].includes(active.value)
       ? t('已保存 ✓（压缩方案对新上传生效）')
@@ -533,6 +565,8 @@ function resetForm() { editing.value = ''; form.value = blankForm(); uMsg.value 
 function goUpload() { location.hash = '#/upload' }
 
 async function submitUser() {
+  if (userBusy.value) return
+  userBusy.value = true
   uMsg.value = t('提交中…')
   const f = { ...form.value }
   f.comp_quality = f.comp_quality === '' || f.comp_quality === null ? null : Number(f.comp_quality)
@@ -551,9 +585,14 @@ async function submitUser() {
       await createUser(store.token, f)
       uMsg.value = `${t('用户')} ${f.username} ${t('已创建 ✓')}`
     }
+    const success = uMsg.value
     resetForm()
-    await loadUsers()
+    uMsg.value = success
+    showToast(success)
+    await refreshMe()
+    if (isAdmin.value) await loadUsers()
   } catch (e) { uMsg.value = t('失败：') + e.message }
+  finally { userBusy.value = false }
 }
 
 async function removeUser(u) {
@@ -738,7 +777,7 @@ const notifyPreview = computed(() => {
 
           <div class="row" style="margin-top:16px">
             <button :disabled="saveBusy" @click="save">{{ saveBusy ? t('保存中…') : t('保存并应用') }}</button>
-            <span class="muted">{{ msg }}</span>
+            <span v-if="msg || dirty" class="msg-line" :class="{ bad: msgBad }" role="status">{{ msg || t('有未保存的修改') }}</span>
           </div>
 
           <h3>{{ t('支持的图片格式') }}</h3>
@@ -868,11 +907,12 @@ const notifyPreview = computed(() => {
               </div>
             </div>
             <div class="row" style="margin:12px 0 0">
-              <button class="ghost" :disabled="notifyBusy" @click="sendTestNotify">
+              <button class="ghost" :disabled="notifyBusy || saveBusy || notifyDirty" @click="sendTestNotify">
                 {{ notifyBusy ? t('发送中…') : t('发送测试') }}
               </button>
               <span class="msg-line" :class="{ bad: notifyOk === false }">{{ notifyMsg }}</span>
             </div>
+            <p v-if="notifyDirty" class="hint muted">{{ t('请先保存通知设置再发送测试') }}</p>
 
             <div class="field span-2" style="margin-top:16px">
               <label>{{ t('消息预览（实际推送内容，以「手动封禁」为例）') }}</label>
@@ -972,9 +1012,9 @@ const notifyPreview = computed(() => {
             <p class="hint muted" style="margin-bottom:0">{{ t('汇报时间使用服务器时区，格式 HH:MM。') }}</p>
           </div>
 
-          <div class="row sticky-actions">
+          <div class="row form-actions">
             <button :disabled="saveBusy" @click="save">{{ saveBusy ? t('保存中…') : t('保存全部设置') }}</button>
-            <span class="msg-line" :class="{ bad: msgBad }">{{ msg }}</span>
+            <span v-if="msg || dirty" class="msg-line" :class="{ bad: msgBad }" role="status">{{ msg || t('有未保存的修改') }}</span>
           </div>
         </template>
 
@@ -1096,8 +1136,8 @@ const notifyPreview = computed(() => {
 GET /api/tags
   → { tags: [{ name, count }] }
 
-GET /api/images?page=1&amp;limit=24&amp;sort=latest|random[&amp;tag=xxx][&amp;mine=1]
-  → { items: [...], page, limit, total, hasMore }
+GET /api/images?limit=36[&amp;cursor=nextCursor][&amp;tag=xxx][&amp;mine=1]
+  → { items: [...], page, limit, total, hasMore, nextCursor }
   item: { id, key, url, thumb, compressed, width, height, mimeType, size,
           compressedSize, createdAt, tag, filename, origName,
           ownerId, owner, mine, canEdit }
@@ -1162,8 +1202,7 @@ POST /api/admin/notify/test   {{ t('按「通知」配置发一条测试消息')
 POST /api/admin/local/import            {{ t('启动后台全量导入（含失败队列重试）') }}
 GET  /api/admin/local/status            {{ t('导入进度轮询') }}
 POST /api/admin/local/import/cancel     {{ t('取消进行中的导入') }}
-POST /api/admin/local/compress?dry_run=true&amp;limit=5
-POST /api/admin/reindex    v4 {{ t('兼容别名，等价于启动后台导入') }}</pre>
+POST /api/admin/local/compress?dry_run=true&amp;limit=5</pre>
 
           <h3>{{ t('用法示例') }}</h3>
           <pre># {{ t('登录拿 token') }}
@@ -1239,7 +1278,7 @@ curl -H "Authorization: Bearer $TOKEN" \
               </div>
             </div>
             <div class="row">
-              <button @click="submitUser">{{ editing ? t('保存修改') : t('创建用户') }}</button>
+                <button :disabled="userBusy" @click="submitUser">{{ userBusy ? t('提交中…') : editing ? t('保存修改') : t('创建用户') }}</button>
               <button class="ghost" v-if="editing" @click="resetForm">{{ t('取消编辑') }}</button>
               <span class="muted">{{ uMsg }}</span>
             </div>
@@ -1452,8 +1491,8 @@ curl -H "Authorization: Bearer $TOKEN" \
             {{ t('上传 .zip 备份包即可整站还原（数据库 + 图片）。恢复会覆盖当前数据，建议先下载一份当前备份。恢复完成后需要重新登录。') }}
           </p>
           <div class="row">
-            <label class="file-pick">
-              <input type="file" accept=".zip,application/zip" @change="onRestoreFile" />
+            <label class="file-pick" role="button" tabindex="0" @keydown.enter.prevent="restoreInput.click()" @keydown.space.prevent="restoreInput.click()">
+              <input ref="restoreInput" type="file" accept=".zip,application/zip" @change="onRestoreFile" />
               <span>{{ t('选择备份包') }}</span>
             </label>
             <span class="muted mono" style="font-size:12px">{{ restoreName }}</span>
@@ -1469,12 +1508,12 @@ curl -H "Authorization: Bearer $TOKEN" \
           <div class="field-grid">
             <template v-for="f in currentGroup()?.fields" :key="f.k">
               <div class="field" v-if="f.type !== 'switch'" :class="{ 'span-2': f.type !== 'number' }">
-                <label>{{ t(f.label) }}</label>
-                <select v-if="f.type === 'select'" v-model="s[f.k]">
+                <label :for="'setting-' + f.k">{{ t(f.label) }}</label>
+                <select v-if="f.type === 'select'" :id="'setting-' + f.k" v-model="s[f.k]">
                   <option v-for="o in f.options" :key="o.v || o" :value="o.v || o">{{ t(o.label || o) }}</option>
                 </select>
-                <input v-else-if="f.type === 'number'" type="number" v-model.number="s[f.k]" />
-                <input v-else v-model="s[f.k]" />
+                <input v-else-if="f.type === 'number'" :id="'setting-' + f.k" type="number" :min="['session_hours','remember_days','rate_ban_minutes','auth_max_fails','auth_ban_minutes'].includes(f.k) ? 1 : 0" v-model.number="s[f.k]" />
+                <input v-else :id="'setting-' + f.k" v-model="s[f.k]" />
                 <span class="hint" v-if="f.hint">{{ t(f.hint) }}</span>
               </div>
               <div class="field span-2" v-else>
@@ -1488,14 +1527,15 @@ curl -H "Authorization: Bearer $TOKEN" \
           </div>
           <p class="hint muted" v-if="currentGroup()?.hint">{{ t(currentGroup().hint) }}</p>
 
-          <div class="row sticky-actions">
+          <div class="row form-actions">
             <button :disabled="saveBusy" @click="save">{{ saveBusy ? t('保存中…') : t('保存全部设置') }}</button>
-            <span class="msg-line" :class="{ bad: msgBad }">{{ msg }}</span>
+            <span v-if="msg || dirty" class="msg-line" :class="{ bad: msgBad }" role="status">{{ msg || t('有未保存的修改') }}</span>
           </div>
         </template>
       </section>
     </div>
-    <div v-else class="spinner"></div>
+    <div v-else-if="loadError" class="panel" role="alert">{{ loadError }}</div>
+    <div v-else class="spinner" role="status" :aria-label="t('正在加载…')"></div>
   </template>
 
   <!-- 全局操作提示：保存/测试等动作的即时反馈 -->

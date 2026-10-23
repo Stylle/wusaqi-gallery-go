@@ -1,13 +1,10 @@
-"""并发冒烟：验证 SQLite 线程本地连接改造后不会出现偶发 500。
+"""并发冒烟：验证 Go 服务的有界 SQLite 连接在并发请求下稳定响应。
 
 用法：
     python qa/concurrent-smoke.py --base http://127.0.0.1:8000 \
         --user admin --password '你的密码' [--rounds 30]
 
-背景：db.get_conn() 早期是全局单连接 + check_same_thread=False，
-FastAPI 同步端点跑线程池时多线程共用一个 Connection，会出现
-`sqlite3.InterfaceError: bad parameter or other API misuse`
-或读到 None 字段导致 500。改成线程本地连接后应全部 200。
+Go 的 database/sql 负责请求排队，连接池固定为一条，避免线程各自保留缓存。
 """
 import argparse
 import json

@@ -1,5 +1,7 @@
 # 低配 VPS / 1C1G 运行方案
 
+> 历史设计记录：本文针对旧 Python 架构，所引用的 `backend/app/` 已在 Go 重构中移除。当前实现、配置和实测结果以 [README](README.md) 和 [架构说明](docs/architecture.md) 为准。
+
 > **2026-10-22 更新：方案 B 已实现**（`backend/app/perf.py` + 后台「图片处理 → 压缩方案」）。
 > 默认 `comp_profile=auto`，启动探测 CPU 核数/内存（含 cgroup 限额）自动落到 tiny/small/normal；
 > 后台可手动锁定某档或切「自定义」。压缩/缩略图共用可调并发槽，tiny 档恒为 1。

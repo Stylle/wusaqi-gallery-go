@@ -25,11 +25,13 @@ const menuOpen = ref(false)        // 用户下拉
 const navOpen = ref(false)         // 手机端汉堡菜单
 const pwdOpen = ref(false)
 const pwdMsg = ref('')
+const pwdBusy = ref(false)
 const pwdForm = ref({ old: '', new: '' })
 
 // 校验中（有 token 但还没验完）不闪锁屏：交给页面内的 ensureAuth 处理
 const isLocked = computed(() =>
-  !!locked[route.value] && !store.ok && (store.checked || !store.token))
+  !!locked[route.value] && !(route.value === 'random' && site.random_public === '1') && !store.ok && (store.checked || !store.token))
+const authPending = computed(() => !!locked[route.value] && !!store.token && !store.checked && !store.ok)
 
 // 全局「登录已失效」提示
 const authNotice = ref('')
@@ -53,7 +55,11 @@ function go(r) {
 
 function sync() {
   const h = location.hash.replace(/^#\/?/, '') || 'gallery'
-  route.value = views[h] ? h : 'gallery'
+  const next = views[h] ? h : 'gallery'
+  if (next !== route.value) {
+    route.value = next
+    window.scrollTo({ top: 0, behavior: 'instant' })
+  }
 }
 
 async function logout() {
@@ -63,6 +69,8 @@ async function logout() {
 }
 
 async function submitPwd() {
+  if (pwdBusy.value) return
+  pwdBusy.value = true
   pwdMsg.value = t('提交中…')
   try {
     await changePassword(store.token, pwdForm.value.old, pwdForm.value.new)
@@ -70,7 +78,7 @@ async function submitPwd() {
     pwdForm.value = { old: '', new: '' }
   } catch (e) {
     pwdMsg.value = t('失败：') + e.message
-  }
+  } finally { pwdBusy.value = false }
 }
 
 function toggleLang() {
@@ -165,7 +173,8 @@ onUnmounted(() => {
   </header>
 
   <main class="wrap">
-    <LockGate v-if="isLocked" :server-error="store.authError === 'server'" />
+    <div v-if="authPending" class="lockbox" role="status">{{ t('正在验证登录…') }}</div>
+    <LockGate v-else-if="isLocked" :server-error="store.authError === 'server'" />
     <component v-else :is="views[route]" />
   </main>
 
@@ -182,15 +191,15 @@ onUnmounted(() => {
       <h3>{{ t('修改密码') }}</h3>
       <div class="field">
         <label>{{ t('当前密码') }}</label>
-        <input v-model="pwdForm.old" type="password" />
+        <input v-model="pwdForm.old" type="password" autocomplete="current-password" />
       </div>
       <div class="field">
         <label>{{ t('新密码（至少 6 位）') }}</label>
-        <input v-model="pwdForm.new" type="password" @keyup.enter="submitPwd" />
+        <input v-model="pwdForm.new" type="password" autocomplete="new-password" @keyup.enter="submitPwd" />
       </div>
       <p class="hint muted">{{ pwdMsg }}</p>
       <div class="row">
-        <button @click="submitPwd">{{ t('确认修改') }}</button>
+        <button :disabled="pwdBusy" @click="submitPwd">{{ pwdBusy ? t('提交中…') : t('确认修改') }}</button>
         <button class="ghost" @click="pwdOpen = false">{{ t('取消') }}</button>
       </div>
     </div>
