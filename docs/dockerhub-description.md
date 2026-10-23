@@ -2,7 +2,7 @@
 
 轻量、自部署的图片画廊与随机图 API。保留完整的 Vue 3 界面，用 **Go 单进程 + SQLite** 提供页面、图片和接口；Pillow 仅在处理图片时启动，完成即退出。适合 NAS、小内存 VPS 和个人图床。
 
-> 当前源码已迁移至 Go 架构。Docker Hub 的 `latest` 在完成构建、容器实测与发布前仍可能是旧 Python 版本，请勿把源码的测试结果当作已发布镜像的指标。
+> Docker Hub 的 `latest` 已更新为 Go 架构，支持 `linux/amd64` 和 `linux/arm64`。当前发布版本为 `67fa611`；旧 Python 镜像保留为 `legacy-python-20261023`。升级前请备份整个 `data/` 目录。
 
 ## 有哪些功能
 
@@ -44,7 +44,7 @@
 
 ## Docker 部署
 
-镜像：[stylle/wusaqi-gallery](https://hub.docker.com/r/stylle/wusaqi-gallery)。发布完成后可直接使用下面的 Compose；需要验证当前源码时先用下一节的源码构建方式。
+镜像：[stylle/wusaqi-gallery](https://hub.docker.com/r/stylle/wusaqi-gallery)。可直接使用下面的 Compose；需要自行构建时使用下一节的源码方式。
 
 ```yaml
 services:
