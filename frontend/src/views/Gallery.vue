@@ -1,7 +1,7 @@
 <script setup>
 import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import { columnsFor, masonryColumns } from '../layout.js'
-import { getImages, getTags, copyText, patchImage, deleteImage, fmtSize } from '../api.js'
+import { getImages, getTags, copyText, patchImage, deleteImage, fmtSize, batchImages, downloadImages } from '../api.js'
 import { store, ui, setViewSize } from '../auth.js'
 import { absUrl } from '../site.js'
 import { t } from '../i18n.js'
@@ -18,6 +18,45 @@ const dialog = ref(null)     // {type:'rename'|'delete', item, value}
 const dialogMsg = ref('')
 const toast = ref('')
 const error = ref('')
+const batchMode = ref(false)
+const selected = ref(new Set())
+const batchBusy = ref(false)
+const batchMessage = ref('')
+const dialogBusy = ref(false)
+const selectedItems = computed(() => items.value.filter(it => selected.value.has(it.id)))
+const canBatchEdit = computed(() => selectedItems.value.length > 0 && selectedItems.value.every(it => it.canEdit))
+function toggleSelection(it) {
+  if (batchBusy.value) return
+  const ids = new Set(selected.value)
+  if (ids.has(it.id)) ids.delete(it.id)
+  else if (ids.size < 500) ids.add(it.id)
+  else { flash(t('一次最多选择 500 张图片')); return }
+  selected.value = ids
+}
+function selectLoaded() {
+  selected.value = new Set(items.value.slice(0, 500).map(it => it.id))
+  if (items.value.length > 500) flash(t('一次最多选择 500 张图片'))
+}
+function endBatch() {
+  if (batchBusy.value) return
+  batchMode.value = false; selected.value = new Set(); batchMessage.value = ''
+}
+function startBatchDialog(type) {
+  dialog.value = { type, ids: [...selected.value], value: '' }
+  dialogMsg.value = ''
+}
+async function batchDownload() {
+  if (batchBusy.value || !selected.value.size) return
+  batchBusy.value = true; batchMessage.value = t('正在打包下载…')
+  try { await downloadImages(store.token, [...selected.value]); batchMessage.value = t('已开始下载') }
+  catch (e) { batchMessage.value = e.message }
+  finally { batchBusy.value = false }
+}
+function fallbackImage(e, it) {
+  if (e.target.dataset.fallback) return
+  e.target.dataset.fallback = '1'
+  e.target.src = it.url
+}
 const sentinel = ref(null)
 const grid = ref(null)
 const gridWidth = ref(Math.max(1, Math.min(window.innerWidth - 24, 1094)))
@@ -40,6 +79,7 @@ async function load(reset = false) {
     items.value = []
     hasMore.value = true
     current.value = null
+    selected.value = new Set()
   }
   const requestGeneration = generation
   controller = new AbortController()
@@ -83,6 +123,7 @@ function flash(msg) {
 function open(item) {
   // 长按唤出菜单后，手指抬起产生的 click 不该顺带打开灯箱（只吞掉这一次）
   if (swallowClick) { swallowClick = false; clearTimeout(swallowTimer); return }
+  if (batchMode.value) { toggleSelection(item); return }
   current.value = item
 }
 
@@ -95,6 +136,7 @@ function closeAll() {
 function menu(e, item = current.value) {
   e.preventDefault()
   if (!item) return
+  if (batchMode.value) return
   ctx.value = {
     x: Math.min(e.clientX, window.innerWidth - 250),
     y: Math.min(e.clientY, window.innerHeight - 300),
@@ -109,6 +151,7 @@ let swallowTimer = null
 let ctxOpenedAt = 0
 
 function touchStart(e, item) {
+  if (batchMode.value) return
   if (e.touches.length > 1) return
   const t0 = e.touches[0]
   swallowClick = false
@@ -153,7 +196,7 @@ function downloadUrl(which) {
   if (!p) { flash(t('该图没有压缩版')); return }
   const name = which === 'original'
     ? it.filename
-    : it.filename.replace(/(\.[^.]+)?$/, '') + (it.compressed || '').match(/(\.[^.]+)$/)?.[1] || it.filename
+    : it.filename.replace(/(\.[^.]+)?$/, '') + (new URL(it.compressed, location.origin).pathname.match(/(\.[^.]+)$/)?.[1] || '')
   const a = document.createElement('a')
   a.href = p
   a.download = name
@@ -184,10 +227,30 @@ function startTag(it) {
 
 async function confirmDialog() {
   const d = dialog.value
-  if (!d) return
+  if (!d || dialogBusy.value) return
+  dialogBusy.value = true
   dialogMsg.value = t('处理中…')
   try {
-    if (d.type === 'tag') {
+    if (d.type === 'batch-tag' || d.type === 'batch-delete') {
+      batchBusy.value = true
+      if (d.type === 'batch-tag') {
+        const result = await batchImages(store.token, d.ids, 'PATCH', d.value.trim())
+        for (const it of items.value) if (d.ids.includes(it.id)) it.tag = result.tag
+        selected.value = new Set()
+        batchMessage.value = t('标签已更新')
+      } else {
+        const result = await batchImages(store.token, d.ids, 'DELETE')
+        const deleted = new Set(result.results.filter(x => x.ok).map(x => x.id))
+        items.value = items.value.filter(it => !deleted.has(it.id))
+        total.value = Math.max(0, total.value - deleted.size)
+        selected.value = new Set(result.results.filter(x => !x.ok).map(x => x.id))
+        batchMessage.value = `${t('已删除')} ${result.done} · ${t('失败')} ${result.failed}`
+        if (result.failed) batchMessage.value += ': ' + result.results.find(x => !x.ok).error
+      }
+      dialog.value = null
+      await reloadTags()
+      if (d.type === 'batch-tag' && ui.activeTag) await load(true)
+    } else if (d.type === 'tag') {
       const updated = await patchImage(store.token, d.item.id, { tag: d.value.trim() })
       const i = items.value.findIndex(x => x.id === updated.id)
       if (i >= 0) items.value[i] = updated
@@ -217,16 +280,16 @@ async function confirmDialog() {
     }
   } catch (e) {
     dialogMsg.value = t('失败：') + e.message
-  }
+  } finally { dialogBusy.value = false; batchBusy.value = false }
 }
 
 function closeLightbox() { current.value = null; ctx.value = null }
 
 function onKey(e) {
-  if (e.key === 'Escape') { if (dialog.value) dialog.value = null; else closeLightbox() }
+  if (e.key === 'Escape' && !dialogBusy.value && !batchBusy.value) { if (dialog.value) dialog.value = null; else if (batchMode.value) endBatch(); else closeLightbox() }
 }
 
-watch(() => [ui.activeTag, ui.onlyMine, store.token], () => { if (mounted) load(true) })
+watch(() => [ui.activeTag, ui.onlyMine, store.token], () => { if (mounted) load(true); if (!store.ok) endBatch() })
 watch(grid, (el, old) => {
   if (old) resizeObserver?.unobserve(old)
   if (el) resizeObserver?.observe(el)
@@ -289,6 +352,18 @@ onUnmounted(() => {
       <button v-for="sz in [['s', '小'], ['m', '中'], ['l', '大']]" :key="sz[0]"
         :class="{ on: ui.viewSize === sz[0] }" @click="setViewSize(sz[0])">{{ t(sz[1]) }}</button>
     </div>
+    <button v-if="store.ok" class="ghost" :disabled="batchBusy" @click="batchMode ? endBatch() : (batchMode = true)">{{ t(batchMode ? '退出批量' : '批量处理') }}</button>
+  </div>
+
+  <div v-if="batchMode" class="batch-toolbar" role="region" :aria-label="t('批量处理')">
+    <strong>{{ t('已选择') }} {{ selected.size }} / 500</strong>
+    <button class="ghost" :disabled="batchBusy || !items.length" @click="selectLoaded">{{ t('全选已加载') }}</button>
+    <button class="ghost" :disabled="batchBusy || !selected.size" @click="selected = new Set()">{{ t('取消选择') }}</button>
+    <button :disabled="batchBusy || !selected.size" @click="batchDownload">{{ t('下载 ZIP') }}</button>
+    <button :disabled="batchBusy || !canBatchEdit" @click="startBatchDialog('batch-tag')">{{ t('编辑标签') }}</button>
+    <button class="danger-btn" :disabled="batchBusy || !canBatchEdit" @click="startBatchDialog('batch-delete')">{{ t('批量删除') }}</button>
+    <span class="muted" v-if="selected.size && !canBatchEdit">{{ t('只能修改或删除自己的图片') }}</span>
+    <span v-if="batchMessage" role="status">{{ batchMessage }}</span>
   </div>
 
   <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
@@ -298,7 +373,7 @@ onUnmounted(() => {
       <span class="filter-hint" v-if="ui.onlyMine && store.ok">· {{ t('仅我的') }}</span>
     </h2>
     <span class="muted">
-      {{ t('共') }} {{ total }} {{ t('张 · 点击看大图') }}{{ store.ok ? t('· 右键/长按可复制、重命名、删除') : '' }}
+      {{ t('共') }} {{ total }} {{ batchMode ? t('张 · 点击选择图片，再使用上方批量操作') : t('张 · 点击看大图') }}{{ store.ok && !batchMode ? t('· 右键/长按可复制、重命名、删除') : '' }}
     </span>
   </div>
 
@@ -313,13 +388,14 @@ onUnmounted(() => {
   </div>
   <div v-else ref="grid" class="masonry stable-grid" :class="'size-' + ui.viewSize" :style="{ '--columns': columnCount }">
     <div v-for="(column, columnIndex) in columns" :key="columnIndex" class="masonry-column">
-    <div v-for="it in column" :key="it.id" class="cell" role="button" tabindex="0" :aria-label="t('查看图片') + ' ' + it.filename"
+    <div v-for="it in column" :key="it.id" class="cell" :class="{ selected: batchMode && selected.has(it.id) }" :role="batchMode ? 'checkbox' : 'button'" tabindex="0" :aria-checked="batchMode ? selected.has(it.id) : undefined" :aria-label="t(batchMode ? '选择图片' : '查看图片') + ' ' + it.filename"
       :style="{ aspectRatio: `${it.width} / ${it.height}` }" @click="open(it)"
       @keydown.enter="open(it)" @keydown.space.prevent="open(it)"
       @touchstart="touchStart($event, it)" @touchend="touchEnd"
       @touchmove="touchEnd" @touchcancel="touchEnd">
       <img :src="it.thumb || it.compressed || it.url" :alt="it.filename" loading="lazy"
-        @contextmenu="menu($event, it)" />
+        @error="fallbackImage($event, it)" @contextmenu="menu($event, it)" />
+      <span v-if="batchMode" class="selection-mark" aria-hidden="true">{{ selected.has(it.id) ? '✓' : '' }}</span>
       <span class="tag-on-img" v-if="it.tag">{{ it.tag }}</span>
       <span class="own" v-if="store.ok && it.mine">{{ t('我的') }}</span>
     </div>
@@ -337,7 +413,7 @@ onUnmounted(() => {
 
   <!-- 灯箱 -->
   <div v-if="current" class="lightbox" @click.self="closeLightbox">
-    <img :src="current.compressed || current.url" :alt="current.filename" @contextmenu="menu" />
+    <img :src="current.compressed || current.url" :alt="current.filename" @error="fallbackImage($event, current)" @contextmenu="menu" />
     <div class="meta mono">
       <span>{{ current.filename }}</span>
       <span>{{ current.width }}×{{ current.height }}</span>
@@ -361,7 +437,7 @@ onUnmounted(() => {
     <button :disabled="!store.ok || !ctx.item.compressed" @click="copyUrl('compressed')">
       {{ t('复制压缩图 URL') }}{{ ctx.item.compressed ? '' : t('（无）') }}
     </button>
-    <button :disabled="!store.ok" @click="copyUrl('thumb')">{{ t('复制缩略图 URL') }}</button>
+    <button :disabled="!store.ok || !ctx.item.thumb" @click="copyUrl('thumb')">{{ t('复制缩略图 URL') }}</button>
     <div class="sep"></div>
     <button @click="downloadUrl('original')">⬇️ {{ t('下载原图') }}</button>
     <button :disabled="!ctx.item.compressed" @click="downloadUrl('compressed')">
@@ -375,9 +451,13 @@ onUnmounted(() => {
   </div>
 
   <!-- 重命名 / 删除确认 -->
-  <div v-if="dialog" class="lightbox" @click.self="dialog = null">
+  <div v-if="dialog" class="lightbox" @click.self="!dialogBusy && (dialog = null)">
     <div class="modal">
-      <template v-if="dialog.type === 'rename'">
+      <template v-if="dialog.type === 'batch-delete'">
+        <h3>{{ t('批量删除') }} · {{ dialog.ids.length }}</h3>
+        <p>{{ t('原图、压缩图、缩略图都会被删除，且不可恢复。') }}</p>
+      </template>
+      <template v-else-if="dialog.type === 'rename'">
         <h3>{{ t('重命名') }}</h3>
         <p class="muted" style="margin-top:-4px">
           {{ t('会同时重命名原图、压缩图与缩略图（扩展名保持不变）。') }}
@@ -387,8 +467,9 @@ onUnmounted(() => {
         </div>
         <p class="mono muted">{{ dialog.item.filename }}</p>
       </template>
-      <template v-else-if="dialog.type === 'tag'">
+      <template v-else-if="dialog.type === 'tag' || dialog.type === 'batch-tag'">
         <h3>{{ t('编辑标签') }}</h3>
+        <p v-if="dialog.type === 'batch-tag'" class="muted">{{ t('统一设置所选图片的标签，留空则清除。') }} ({{ dialog.ids.length }})</p>
         <div class="field">
           <input v-model="dialog.value" maxlength="40" list="gallery-tags" @keyup.enter="confirmDialog" :placeholder="t('留空可移除标签')" />
           <datalist id="gallery-tags"><option v-for="tg in tags" :key="tg.name" :value="tg.name" /></datalist>
@@ -401,9 +482,9 @@ onUnmounted(() => {
       </template>
       <p class="tag-err">{{ dialogMsg }}</p>
       <div class="row">
-        <button v-if="dialog.type === 'delete'" class="danger-btn" @click="confirmDialog">{{ t('确认删除') }}</button>
-        <button v-else @click="confirmDialog">{{ t('保存') }}</button>
-        <button class="ghost" @click="dialog = null">{{ t('取消') }}</button>
+        <button v-if="dialog.type === 'delete' || dialog.type === 'batch-delete'" :disabled="dialogBusy" class="danger-btn" @click="confirmDialog">{{ t('确认删除') }}</button>
+        <button v-else :disabled="dialogBusy" @click="confirmDialog">{{ t('保存') }}</button>
+        <button class="ghost" :disabled="dialogBusy" @click="dialog = null">{{ t('取消') }}</button>
       </div>
     </div>
   </div>

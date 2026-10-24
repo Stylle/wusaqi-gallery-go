@@ -1,11 +1,14 @@
 <script setup>
 import { ref, onUnmounted } from 'vue'
-import { getRandom, copyText, randomImageUrl } from '../api.js'
+import { getRandom, getTags, copyText, randomImageUrl } from '../api.js'
 import { absUrl, site } from '../site.js'
 import { store } from '../auth.js'
 import { t } from '../i18n.js'
 
 const variant = ref('compressed')
+const tag = ref('')
+const tags = ref([])
+getTags().then(d => { tags.value = d.tags || [] }).catch(() => {})
 const item = ref(null)
 const loading = ref(false)
 const error = ref('')
@@ -17,7 +20,7 @@ async function next() {
   loading.value = true
   error.value = ''
   try {
-    const result = await getRandom(variant.value, store.token)
+    const result = await getRandom(variant.value, store.token, tag.value)
     if (version === requestVersion) item.value = result
   } catch (e) {
     if (version !== requestVersion) return
@@ -41,6 +44,7 @@ onUnmounted(() => { requestVersion++ })
 <template>
   <div class="randbox">
     <div class="actions" style="margin-bottom:16px">
+      <label>{{ t('标签') }} <select v-model="tag" @change="next"><option value="">{{ t('全部') }}</option><option v-for="tg in tags" :key="tg.name" :value="tg.name">{{ tg.name }}</option></select></label>
       <label><input type="radio" value="compressed" v-model="variant" @change="next" /> {{ t('压缩图（省流量）') }}</label>
       <label><input type="radio" value="original" v-model="variant" @change="next" /> {{ t('原始图') }}</label>
     </div>
@@ -57,7 +61,7 @@ onUnmounted(() => { requestVersion++ })
       <a :href="src(item)" target="_blank" rel="noopener noreferrer" class="link-button">{{ t('新窗口打开') }}</a>
     </div>
     <p class="muted mono" v-if="item">
-      {{ t('直链：') }}<code>{{ randomImageUrl('compressed') }}</code> / <code>{{ randomImageUrl('original') }}</code>
+      {{ t('直链：') }}<code>{{ randomImageUrl('compressed', tag) }}</code> / <code>{{ randomImageUrl('original', tag) }}</code>
       <span v-if="site.random_public !== '1'">{{ t('（当前仅登录可用，后台可开放）') }}</span>
     </p>
     <p v-if="copyMessage" class="muted" role="status">{{ copyMessage }}</p>

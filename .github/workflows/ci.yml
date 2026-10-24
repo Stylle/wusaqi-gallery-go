@@ -50,6 +50,7 @@ jobs:
       - name: Migration, API and deployment regression
         run: |
           python qa/regression.py
+          python qa/features.py
           python qa/check-compose.py
       - name: Check README synchronization
         shell: bash
@@ -71,4 +72,6 @@ jobs:
       - name: Run full regression against the container
         env:
           QA_DOCKER_IMAGE: wusaqi-gallery:ci
-        run: python qa/regression.py
+        run: |
+          python qa/regression.py
+          python qa/features.py

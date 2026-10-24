@@ -5,6 +5,7 @@ import {
   listUsers, createUser, updateUser, deleteUser, fmtSize,
   scanLocal, startLocalImport, localImportStatus, cancelLocalImport,
   compressLocal, getStats, testNotify,
+  inspectIndex, rebuildIndex, clearDerived,
   banIp, unbanIp, addWhitelist, removeWhitelist, addBlacklist, removeBlacklist,
   getBackupStats, downloadBackup, restoreBackup,
 } from '../api.js'
@@ -130,6 +131,38 @@ const compLimit = ref(5)
 const compInfo = ref(null)
 const compMsg = ref('')
 const compBusy = ref(false)
+const indexInfo = ref(null)
+const indexBusy = ref(false)
+const indexMsg = ref('')
+const indexConfirm = ref(false)
+const indexDialog = ref(null)
+function askIndex(clear) {
+  if (indexBusy.value || localBusy.value || compBusy.value) return
+  indexConfirm.value = clear
+  indexDialog.value?.showModal()
+}
+async function checkIndex() {
+  if (indexBusy.value) return
+  indexBusy.value = true; indexMsg.value = t('检查中…')
+  try { indexInfo.value = await inspectIndex(store.token); indexMsg.value = t('检查完成') }
+  catch (e) { indexMsg.value = e.message }
+  finally { indexBusy.value = false }
+}
+async function maintainIndex(clear = false) {
+  if (indexBusy.value || localJob.value?.running || compBusy.value) return
+  indexDialog.value?.close()
+  indexBusy.value = true; indexMsg.value = t('处理中…')
+  try {
+    const result = clear ? await clearDerived(store.token) : await rebuildIndex(store.token)
+    indexInfo.value = await inspectIndex(store.token)
+    indexMsg.value = clear ? `${t('已清空衍生文件')} ${result.removedFiles}` : `${t('已移除失效记录')} ${result.removed} · ${t('已修正压缩图引用')} ${result.resetCompressed}`
+    if (result.errorCount) indexMsg.value += ` · ${t('失败')} ${result.errorCount}`
+    if (result.errors?.length) indexMsg.value += ': ' + result.errors[0].error
+    compInfo.value = null
+    await refreshMe()
+  } catch (e) { indexMsg.value = e.message }
+  finally { indexBusy.value = false }
+}
 
 // ---- 访问统计 ----
 const stats = ref(null)
@@ -1020,6 +1053,23 @@ const notifyPreview = computed(() => {
 
         <!-- 本地图库导入 / 补压缩 -->
         <template v-else-if="currentGroup()?.custom === 'local'">
+          <div class="panel">
+            <h3>{{ t('索引与文件维护') }}</h3>
+            <p class="muted">{{ t('直接在文件夹删除图片后，先检查再重建索引。缺少衍生格式时可补齐；也可清空后按当前压缩方案重新生成。') }}</p>
+            <div class="row">
+              <button class="ghost" :disabled="indexBusy || localBusy || compBusy" @click="checkIndex">{{ t('检查索引') }}</button>
+              <button :disabled="indexBusy || localBusy || compBusy || !indexInfo" @click="askIndex(false)">{{ t('重建索引') }}</button>
+              <button class="ghost danger" :disabled="indexBusy || localBusy || compBusy" @click="askIndex(true)">{{ t('清空缩略图与压缩图') }}</button>
+            </div>
+            <p v-if="indexMsg" role="status">{{ indexMsg }}</p>
+            <div v-if="indexInfo" class="muted">
+              <p>{{ t('已检查') }} {{ indexInfo.checked }} · {{ t('原图缺失') }} {{ indexInfo.missingOriginals }} · {{ t('缺缩略图') }} {{ indexInfo.missingThumbs }} · {{ t('缺压缩版') }} {{ indexInfo.missingCompressed }} · {{ t('读取失败') }} {{ indexInfo.errorCount }}</p>
+              <details v-if="indexInfo.items.length"><summary>{{ t('查看缺失明细（最多 100 条）') }}</summary>
+                <p v-for="it in indexInfo.items" :key="it.id" class="mono index-detail">{{ it.key }} · {{ it.missingOriginal ? t('原图缺失') : [it.missingThumb && t('缺缩略图'), it.missingCompressed && t('缺压缩版')].filter(Boolean).join(' / ') }}</p>
+              </details>
+              <p v-for="it in indexInfo.errors" :key="it.id" class="tag-err">{{ it.key }}: {{ it.error }}</p>
+            </div>
+          </div>
           <p class="muted">
             {{ t('把图片直接放进数据目录的') }} <code>uploads/</code>（{{ t('Docker 部署为') }} <code>/data/uploads</code>），
             {{ t('这里可以扫描入库 —— 原文件路径不变，归属') }}<strong>{{ t('管理员') }}</strong>；
@@ -1152,14 +1202,19 @@ GET  /api/auth/me        {{ t('当前用户 + 用量') }}
 POST /api/auth/password  {"old":"***","new":"***"}</pre>
 
           <h3>{{ t('随机图（默认需登录；后台可开放为公开）') }}</h3>
-          <pre>GET /api/random?variant=compressed|original[&amp;redirect=true]
-GET /api/random/image?variant=compressed|original   # 302 {{ t('直链') }}</pre>
+          <pre>GET /api/random?variant=compressed|original[&amp;redirect=true][&amp;tag=cat]
+GET /api/random/image?variant=compressed|original[&amp;tag=cat]   # 302 {{ t('直链') }}
+# Optional tag: exact match; URL-encode its value. No matches: 404.</pre>
 
           <h3>{{ t('图片（登录）') }}</h3>
           <pre>POST   /api/upload        multipart: files=@a.png&amp;tag=xxx
 PATCH  /api/images/{id}   {"filename":"newname"}  {{ t('重命名（原图/压缩/缩略图同步）') }}
                           {"tag":"landscape"}          {{ t('改标签') }}
 DELETE /api/images/{id}   {{ t('删原图 + 压缩图 + 缩略图') }}
+PATCH  /api/images/batch  {"ids":["id1","id2"],"tag":"landscape"}
+DELETE /api/images/batch  {"ids":["id1","id2"]}
+POST   /api/images/batch/download  {"ids":["id1","id2"]}  # ZIP originals
+# Batch: 1–500 IDs; empty tag clears labels; delete reports per-item results.
   {{ t('权限：管理员可操作全部；普通用户仅限自己上传的图') }}</pre>
 
           <h3>{{ t('用户管理（管理员）') }}</h3>
@@ -1202,7 +1257,10 @@ POST /api/admin/notify/test   {{ t('按「通知」配置发一条测试消息')
 POST /api/admin/local/import            {{ t('启动后台全量导入（含失败队列重试）') }}
 GET  /api/admin/local/status            {{ t('导入进度轮询') }}
 POST /api/admin/local/import/cancel     {{ t('取消进行中的导入') }}
-POST /api/admin/local/compress?dry_run=true&amp;limit=5</pre>
+POST /api/admin/local/compress?dry_run=true&amp;limit=5
+GET  /api/admin/local/index             # 检查原图和衍生文件
+POST /api/admin/local/rebuild           # 清理无效记录、重置失效压缩图引用
+POST /api/admin/local/clear-derived     # { "confirm": "clear-derived" }</pre>
 
           <h3>{{ t('用法示例') }}</h3>
           <pre># {{ t('登录拿 token') }}
@@ -1539,5 +1597,13 @@ curl -H "Authorization: Bearer $TOKEN" \
   </template>
 
   <!-- 全局操作提示：保存/测试等动作的即时反馈 -->
+  <dialog ref="indexDialog" class="modal maintenance-dialog" aria-labelledby="index-confirm-title">
+    <h3 id="index-confirm-title">{{ t(indexConfirm ? '清空缩略图与压缩图' : '重建索引') }}</h3>
+    <p>{{ indexConfirm ? t('清空全部缩略图和压缩图？原图、标签和归属保留，之后可使用补齐功能重新生成。') : t('重建索引会移除原图已不存在的记录及其衍生文件，并修正失效的压缩图引用。继续？') }}</p>
+    <div class="row">
+      <button class="ghost" autofocus @click="indexDialog.close()">{{ t('取消') }}</button>
+      <button :class="{ 'danger-btn': indexConfirm }" @click="maintainIndex(indexConfirm)">{{ t(indexConfirm ? '清空缩略图与压缩图' : '重建索引') }}</button>
+    </div>
+  </dialog>
   <div v-if="toastText" class="admin-toast" :class="{ bad: !toastOk }">{{ toastText }}</div>
 </template>

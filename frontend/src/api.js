@@ -57,10 +57,10 @@ export const changePassword = (token, oldPwd, newPwd) =>
   }).then(r => json(r, { noUnauth: true }))
 
 // ---------- 随机图 ----------
-export const getRandom = (variant, token) =>
-  fetch(`/api/random?variant=${variant}`, { headers: auth(token) }).then(json)
+export const getRandom = (variant, token, tag = '') =>
+  fetch(`/api/random?${new URLSearchParams({ variant, ...(tag ? { tag } : {}) })}`, { headers: auth(token) }).then(json)
 
-export const randomImageUrl = (variant) => `/api/random/image?variant=${variant}`
+export const randomImageUrl = (variant, tag = '') => `/api/random/image?${new URLSearchParams({ variant, ...(tag ? { tag } : {}) })}`
 
 // ---------- 图片 ----------
 export const uploadOne = (token, file, tag, onProgress) => {
@@ -95,6 +95,28 @@ export const patchImage = (token, id, payload) =>
 
 export const deleteImage = (token, id) =>
   fetch(`/api/images/${id}`, { method: 'DELETE', headers: auth(token) }).then(json)
+
+export const batchImages = (token, ids, method, tag) =>
+  fetch('/api/images/batch', { method, headers: { ...auth(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids, ...(tag !== undefined ? { tag } : {}) }) }).then(json)
+
+export async function downloadImages(token, ids) {
+  const res = await fetch('/api/images/batch/download', { method: 'POST',
+    headers: { ...auth(token), 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) })
+  if (!res.ok) return json(res)
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `wusaqi-images-${Date.now()}.zip`
+  document.body.appendChild(a); a.click(); a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 10000)
+}
+
+export const inspectIndex = (token) => fetch('/api/admin/local/index', { headers: auth(token) }).then(json)
+export const rebuildIndex = (token) => fetch('/api/admin/local/rebuild', { method: 'POST', headers: auth(token) }).then(json)
+export const clearDerived = (token) => fetch('/api/admin/local/clear-derived', { method: 'POST',
+  headers: { ...auth(token), 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: 'clear-derived' }) }).then(json)
 
 // ---------- 后台 ----------
 export const getSettings = (token) =>

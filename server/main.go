@@ -135,7 +135,7 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			a.dataMu.RLock()
 			defer a.dataMu.RUnlock()
 		}
-		if r.Method != "GET" && r.Method != "HEAD" {
+		if r.Method != "GET" && r.Method != "HEAD" && r.URL.Path != "/api/images/batch/download" {
 			a.writeMu.Lock()
 			defer a.writeMu.Unlock()
 		}
@@ -238,6 +238,8 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		a.usersRoute(w, r)
 	case p == "/api/upload" && m == "POST":
 		a.upload(w, r)
+	case p == "/api/images/batch" || p == "/api/images/batch/download":
+		a.batchImages(w, r)
 	case strings.HasPrefix(p, "/api/images/"):
 		a.imageRoute(w, r)
 	case strings.HasPrefix(p, "/api/admin/"):

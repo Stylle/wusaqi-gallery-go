@@ -19,14 +19,27 @@ import (
 func (a *App) image(i any) M {
 	return a.one("SELECT i.*,u.username AS owner_name FROM images i LEFT JOIN users u ON u.id=i.owner_id WHERE i.id=?", i)
 }
-func itemJSON(r, u M) M {
+func (a *App) itemJSON(r, u M) M {
 	own := u != nil && r["owner_id"] == u["id"]
 	edit := u != nil && (u["role"] == "admin" || own)
-	var c any
-	if str(r["c_key"]) != "" {
-		c = "/compressed/" + str(r["c_key"])
+	c := a.derivativeURL("compressed", str(r["c_key"]))
+	thumb := a.derivativeURL("thumbs", str(r["key"])+".webp")
+	var csize any
+	if c != nil {
+		csize = r["c_size"]
 	}
-	return M{"id": r["id"], "key": r["key"], "url": "/files/" + str(r["key"]), "thumb": "/thumbs/" + str(r["key"]) + ".webp", "compressed": c, "width": r["width"], "height": r["height"], "mimeType": r["mime"], "size": r["size"], "compressedSize": r["c_size"], "createdAt": r["created_at"], "tag": str(r["tag"]), "filename": filepath.Base(str(r["key"])), "origName": str(r["orig_name"]), "ownerId": str(r["owner_id"]), "owner": str(r["owner_name"]), "mine": own, "canEdit": edit}
+	return M{"id": r["id"], "key": r["key"], "url": "/files/" + str(r["key"]), "thumb": thumb, "compressed": c, "width": r["width"], "height": r["height"], "mimeType": r["mime"], "size": r["size"], "compressedSize": csize, "createdAt": r["created_at"], "tag": str(r["tag"]), "filename": filepath.Base(str(r["key"])), "origName": str(r["orig_name"]), "ownerId": str(r["owner_id"]), "owner": str(r["owner_name"]), "mine": own, "canEdit": edit}
+}
+func (a *App) derivativeURL(dir, key string) any {
+	if key == "" {
+		return nil
+	}
+	fi, e := os.Stat(pathIn(filepath.Join(a.data, dir), key))
+	if e != nil || !fi.Mode().IsRegular() {
+		return nil
+	}
+	// Regenerated files need a new cache key even when their pathname is kept.
+	return fmt.Sprintf("/%s/%s?v=%d", dir, key, fi.ModTime().UnixNano())
 }
 func (a *App) images(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
@@ -70,7 +83,7 @@ func (a *App) images(w http.ResponseWriter, r *http.Request) {
 	items := []M{}
 	next := ""
 	for _, im := range rows {
-		items = append(items, itemJSON(im, u))
+		items = append(items, a.itemJSON(im, u))
 	}
 	if more && len(rows) > 0 {
 		last := rows[len(rows)-1]
@@ -83,19 +96,25 @@ func (a *App) random(w http.ResponseWriter, r *http.Request) {
 	if a.settings()["random_public"] != "1" {
 		a.require(r, false)
 	}
-	row := a.one("SELECT * FROM images ORDER BY RANDOM() LIMIT 1")
+	query, args := "SELECT * FROM images", []any{}
+	if tag := strings.TrimSpace(r.URL.Query().Get("tag")); tag != "" {
+		query += " WHERE tag=?"
+		args = append(args, tag)
+	}
+	row := a.one(query+" ORDER BY RANDOM() LIMIT 1", args...)
 	if row == nil {
 		fail(404, "no images")
 	}
-	p := "/files/" + str(row["key"])
-	if r.URL.Query().Get("variant") != "original" && str(row["c_key"]) != "" {
-		p = "/compressed/" + str(row["c_key"])
+	item := a.itemJSON(row, nil)
+	p := str(item["url"])
+	if r.URL.Query().Get("variant") != "original" && item["compressed"] != nil {
+		p = str(item["compressed"])
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	if r.URL.Path == "/api/random/image" || truth(r.URL.Query().Get("redirect")) {
 		http.Redirect(w, r, p, 302)
 	} else {
-		respond(w, itemJSON(row, nil))
+		respond(w, item)
 	}
 }
 
@@ -206,7 +225,7 @@ func (a *App) registerFile(path, key, filename string, u M, tag string, local bo
 		row[k] = info[k]
 	}
 	a.insert("images", row)
-	return itemJSON(a.image(row["id"]), u)
+	return a.itemJSON(a.image(row["id"]), u)
 }
 func truncate(s string, n int) string {
 	r := []rune(s)
@@ -371,5 +390,5 @@ func (a *App) imageRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	a.update("images", "id", uid, fields)
 	renameSaved = true
-	respond(w, itemJSON(a.image(uid), u))
+	respond(w, a.itemJSON(a.image(uid), u))
 }
