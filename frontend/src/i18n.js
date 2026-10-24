@@ -549,6 +549,28 @@ const EN = {
 }
 
 // 带变量的后端消息（正则 + 取值函数）
+Object.assign(EN, {
+  '张 · 点击选择图片，再使用上方批量操作': ' images · Select images, then use the batch actions above',
+  '批量处理': 'Batch actions', '退出批量': 'Exit batch mode', '已选择': 'Selected',
+  '选择图片': 'Select image', '全选已加载': 'Select loaded images', '取消选择': 'Clear selection',
+  '下载 ZIP': 'Download ZIP', '批量删除': 'Delete selected', '一次最多选择 500 张图片': 'Select up to 500 images at a time',
+  '只能修改或删除自己的图片': 'You can only edit or delete your own images',
+  '正在打包下载…': 'Preparing ZIP download…', '统一设置所选图片的标签，留空则清除。': 'Set one label for all selected images. Leave blank to remove their labels.',
+  '索引与文件维护': 'Index and file maintenance', '检查索引': 'Check index', '重建索引': 'Rebuild index',
+  '清空缩略图与压缩图': 'Clear thumbnails and compressed images',
+  '直接在文件夹删除图片后，先检查再重建索引。缺少衍生格式时可补齐；也可清空后按当前压缩方案重新生成。': 'After deleting files directly, check and rebuild the index. Repair missing derivatives, or clear them and regenerate with the current compression settings.',
+  '清空全部缩略图和压缩图？原图、标签和归属保留，之后可使用补齐功能重新生成。': 'Clear ALL thumbnails and compressed images? Originals, labels and ownership stay intact. Use the repair tool to regenerate derivatives.',
+  '重建索引会移除原图已不存在的记录及其衍生文件，并修正失效的压缩图引用。继续？': 'Rebuilding removes records with missing originals and their derivatives, and resets broken compressed-image references. Continue?',
+  '检查完成': 'Check complete', '已清空衍生文件': 'Derivative files cleared', '已移除失效记录': 'Stale records removed',
+  '已修正压缩图引用': 'Compressed-image references repaired', '已检查': 'Checked', '原图缺失': 'Original missing',
+  '读取失败': 'Read errors', '查看缺失明细（最多 100 条）': 'View missing files (up to 100)',
+  '请选择 1–500 张图片': 'Select 1–500 images', '图片不存在，请刷新列表': 'Image not found. Refresh the gallery.',
+  '部分原图已不存在或无法读取，请重建索引后重试': 'Some originals are missing or unreadable. Rebuild the index and try again.',
+  '原图无法读取': 'Original is not readable', '原图目录不可用，请先确认数据卷和目录权限': 'The originals directory is unavailable. Check the data volume and permissions first.',
+  '导入任务进行中，请结束或取消导入后再维护索引': 'Finish or cancel the import before maintaining the index.',
+  '请确认清空缩略图与压缩图': 'Confirm clearing thumbnails and compressed images',
+})
+
 const EN_PATTERNS = [
   [/^(.+?)上传已达上限 (\d+) 张，请稍后再试或联系管理员$/, m => `${t(m[1])} upload limit reached (${m[2]}). Try later or ask the administrator.`],
   [/^超过单图上限 (\d+)MB$/, m => `Exceeds the per-image limit of ${m[1]} MB`],

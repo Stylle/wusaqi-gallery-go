@@ -95,6 +95,7 @@ Linux Docker 主机（包括 WSL 2）安装测试依赖后，可自动复现：
 python -m pip install -r backend/requirements.txt psutil pyyaml
 docker build -t wusaqi-gallery:local .
 QA_DOCKER_IMAGE=wusaqi-gallery:local python qa/regression.py
+QA_DOCKER_IMAGE=wusaqi-gallery:local python qa/features.py
 QA_DOCKER_IMAGE=wusaqi-gallery:local python qa/container-memory.py
 QA_DOCKER_IMAGE=wusaqi-gallery:local QA_DOCKER_CPUS=1 QA_DOCKER_MEMORY=512m \
   python qa/container-memory.py

@@ -10,13 +10,14 @@
 | --- | --- |
 | 画廊 | 瀑布流、灯箱、三档网格、仅看我的、标签筛选；滑到页面底部自动加载下一批，无翻页按钮 |
 | 图片链接 | 保留原图、压缩版、WebP 缩略图三种 URL；复制、下载、重命名与删除 |
+| 批量操作 | 登录后进入批量模式，多选或全选已加载图片；原图 ZIP 下载、统一设置/清空标签、批量删除，单次最多 500 张 |
 | 标签 | 画廊只显示实际有图片的标签；图片菜单可编辑或清空标签；后台标签池作为上传候选保留 |
 | 上传 | 拖拽、多选、剪贴板粘贴、逐文件进度和压缩大小；JPG/PNG/WebP/AVIF/GIF/BMP，GIF 保留动图 |
 | 压缩 | 自动探测机器或选择轻量/均衡/标准/自定义；格式、质量、宽度、像素上限、并发上限；支持用户覆盖 |
-| 随机图 | JSON 或 302 直链，可选原图/压缩图；默认登录后使用，也可在后台公开 |
+| 随机图 | JSON 或 302 直链，可选原图/压缩图、按标签精确随机；默认登录后使用，也可在后台公开 |
 | 用户 | 管理员和普通用户；容量、单图大小、日/周/月上传数量；停用、改密、删除及图片转交 |
 | 后台 | 站点标题、图标、页脚、分享域名、上传、压缩、防御、通知、用户与备份，保存后热生效 |
-| 本地图库 | 扫描已有文件、后台导入、进度、取消、失败重试、补齐缺失缩略图和压缩版 |
+| 本地图库 | 扫描导入、进度、取消与重试；检查/重建索引、清理失效记录、清空并重新生成缩略图和压缩版 |
 | 防御与统计 | 随机接口限流、登录防爆破、临时封禁、IP/CIDR 黑白名单；最近三天 PV/UV 与热门路径 |
 | 通知 | Webhook 方法/请求头/正文模板，事件开关，日报/周报/月报与测试发送 |
 | 备份 | 在线 SQLite 快照与全部图片 ZIP；校验后恢复，恢复完成需重新登录 |
@@ -126,6 +127,14 @@ docker compose up -d --build
 
 标签池和图片标签相互独立：从标签池移除一个候选，不会批量清除图片已有标签；清空最后一张图片的标签，画廊的对应筛选项会自动消失。
 
+### 批量处理与索引维护
+
+登录后点击画廊的“批量处理”，点击图片选择，或“全选已加载”；继续滚动可加载并选择更多图片，单次最多 500 张。下载会把原图打包为 ZIP；普通用户只能编辑/删除自己上传的图片，管理员可操作全部。标签操作统一替换所选图片的标签，留空即清除；批量删除会显示成功和失败数量，失败项保留选中便于重试。删除不可恢复，请先备份。
+
+直接在服务器上删过文件后，进入后台“本地图库导入”→“检查索引”，查看原图、缩略图和压缩版缺失数量及明细。“重建索引”会重新核对磁盘，移除原图已不存在的记录及其衍生文件，并修正失效压缩图引用；已有图片的 ID、标签、归属和原图链接保持不变。未入库的新原图仍使用“扫描/导入”。挂载异常或权限问题应先恢复数据卷，避免把空目录误当成已删除图库。
+
+需要更换生成格式或重做衍生文件时，点击“清空缩略图与压缩图”并确认；它仅清除生成文件，保留全部原图和元数据。随后使用同页的“补齐缺失缩略图和压缩版”。补齐前画廊会使用原图显示，流量相应增加；GIF 不生成压缩副本，不算缺失压缩版。导入任务运行期间不能执行索引维护，请先结束或取消导入。
+
 ## API
 
 除公开接口外使用 `Authorization: Bearer <token>`，token 来自账号密码登录。
@@ -136,8 +145,8 @@ GET    /api/public/settings
 GET    /api/tags                          # 仅返回 count > 0 的图片标签
 GET    /api/images?limit=36&cursor=...     # 返回 items/total/hasMore/nextCursor
                                          # 可加 tag=...、mine=1（需登录）
-GET    /api/random?variant=compressed|original[&redirect=true]
-GET    /api/random/image?variant=...      # 302，不缓存随机结果
+GET    /api/random?variant=compressed|original[&redirect=true][&tag=...]
+GET    /api/random/image?variant=...[&tag=...] # 302，不缓存随机结果
 POST   /api/auth/login                    # {username,password,remember}
 POST   /api/auth/logout
 GET    /api/auth/me
@@ -145,6 +154,9 @@ POST   /api/auth/password                 # {old,new}
 POST   /api/upload                        # multipart files、tag
 PATCH  /api/images/{id}                   # {filename} 或 {tag}，空 tag 清除
 DELETE /api/images/{id}
+PATCH  /api/images/batch                 # {ids:[...],tag:"..."}；空 tag 清除
+DELETE /api/images/batch                 # {ids:[...]}；逐项 results/done/failed
+POST   /api/images/batch/download        # {ids:[...]}；流式原图 ZIP
 GET/POST/PATCH/DELETE /api/users[/{id}]    # 管理员
 GET/PUT /api/admin/settings
 GET    /api/admin/system
@@ -157,6 +169,9 @@ POST   /api/admin/local/import
 GET    /api/admin/local/status
 POST   /api/admin/local/import/cancel
 POST   /api/admin/local/compress?dry_run=true&limit=5
+GET    /api/admin/local/index            # 只读检查磁盘与索引
+POST   /api/admin/local/rebuild          # 移除失效记录、修正压缩版引用
+POST   /api/admin/local/clear-derived    # {confirm:"clear-derived"}
 GET    /api/admin/backup/stats
 GET    /api/admin/backup
 POST   /api/admin/restore                 # multipart file=.zip
@@ -169,7 +184,10 @@ POST   /api/admin/notify/test
 
 ```markdown
 ![random](https://你的域名/api/random/image?variant=compressed)
+![cat](https://你的域名/api/random/image?variant=compressed&tag=cat)
 ```
+
+`tag` 按完整标签精确匹配，中文或特殊字符请先 URL 编码；省略或留空表示全部图片，无匹配返回 404。两个随机接口都支持此参数，原有登录/公开与限流规则不变。批量接口均需登录，`ids` 单次 1–500 个；编辑/删除会在修改前检查全部 ID 与权限。ZIP 先核验所有原图是否可读，再流式输出，不在服务端内存中积攒整个归档。列表中的 `thumb` / `compressed` 缺失时为 `null`；有效生成链接附带缓存版本参数，重生成后自动刷新。
 
 ## 本地运行和验证
 

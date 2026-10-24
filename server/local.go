@@ -188,6 +188,8 @@ func (a *App) importWorker(uid any) {
 }
 func (a *App) localRoute(w http.ResponseWriter, r *http.Request, u M) {
 	switch {
+	case r.URL.Path == "/api/admin/local/index" || r.URL.Path == "/api/admin/local/rebuild" || r.URL.Path == "/api/admin/local/clear-derived":
+		a.maintenance(w, r)
 	case r.URL.Path == "/api/admin/local/scan" && r.Method == "GET":
 		if r.URL.Query().Get("dry_run") == "false" {
 			fail(400, "请使用 POST /api/admin/local/import")
@@ -258,6 +260,9 @@ func (a *App) compressLocal(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, im := range rows {
 			after = str(im["id"])
+			if !exists(pathIn(filepath.Join(a.data, "uploads"), str(im["key"]))) {
+				continue
+			}
 			ck := str(im["c_key"])
 			needC := ck == "" || !exists(pathIn(filepath.Join(a.data, "compressed"), ck))
 			if str(im["mime"]) == "image/gif" {

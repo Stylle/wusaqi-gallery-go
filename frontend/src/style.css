@@ -668,6 +668,8 @@ button.danger { color: var(--err); }
   animation: pop 0.18s;
 }
 .modal h3 { margin: 0 0 10px; font-weight: 500; }
+.maintenance-dialog { color: var(--text); margin: auto; max-height: 90dvh; overflow: auto; }
+.maintenance-dialog::backdrop { background: rgb(0 0 0 / 55%); }
 .modal .field { margin: 12px 0; }
 .modal .field label { font-size: 12.5px; color: var(--muted); }
 .modal .row { display: flex; gap: 10px; align-items: center; margin-top: 14px; }
@@ -1172,6 +1174,12 @@ button.danger { color: var(--err); }
   overflow-x: auto;
 }
 /* The sentinel remains mounted while the next batch loads. */
+.batch-toolbar { position: sticky; top: 68px; z-index: 15; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px; margin: 12px 0; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-solid); box-shadow: 0 4px 16px #0002; }
+.cell.selected { outline: 3px solid var(--accent); outline-offset: -3px; }
+.selection-mark { position: absolute; top: 9px; right: 9px; width: 25px; height: 25px; border: 2px solid white; border-radius: 7px; background: #252536bb; color: white; display: grid; place-items: center; font-weight: bold; pointer-events: none; }
+.cell.selected .selection-mark { background: var(--grad-accent); color: var(--on-accent); }
+.index-detail { overflow-wrap: anywhere; font-size: 12px; }
+@media (max-width: 768px) { .batch-toolbar { top: 56px; gap: 7px; } .batch-toolbar button { padding: 7px 10px; } }
 .load-sentinel { min-height: 72px; display: flex; align-items: center; justify-content: center; gap: 12px; }
 .masonry.stable-grid { display: grid; grid-template-columns: repeat(var(--columns), minmax(0, 1fr)); align-items: start; gap: 12px; }
 .masonry-column { min-width: 0; }
