@@ -119,7 +119,11 @@ func (a *App) random(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) work(job M) (M, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	parent := a.workerContext
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, 10*time.Minute)
 	defer cancel()
 	b, e := json.Marshal(job)
 	if e != nil {
@@ -146,6 +150,22 @@ func (a *App) work(job M) (M, error) {
 	return result.Result, nil
 }
 func (a *App) process(path, key string, lim M, thumb, compressed bool) (M, error) {
+	t, c := "", ""
+	if thumb {
+		t = pathIn(filepath.Join(a.data, "thumbs"), key+".webp")
+	}
+	ext := map[string]string{"webp": "webp", "jpeg": "jpg", "png": "png"}[str(lim["format"])]
+	ckey := strings.TrimSuffix(key, filepath.Ext(key)) + "." + ext
+	if compressed {
+		c = pathIn(filepath.Join(a.data, "compressed"), ckey)
+	}
+	info, err := a.processTo(path, lim, t, c)
+	if _, ok := info["c_size"]; ok {
+		info["c_key"] = ckey
+	}
+	return info, err
+}
+func (a *App) processTo(path string, lim M, thumb, compressed string) (M, error) {
 	a.poolMu.Lock()
 	for a.active >= num(lim["concurrency"]) {
 		a.poolCond.Wait()
@@ -154,20 +174,15 @@ func (a *App) process(path, key string, lim M, thumb, compressed bool) (M, error
 	a.poolMu.Unlock()
 	defer func() { a.poolMu.Lock(); a.active--; a.poolCond.Broadcast(); a.poolMu.Unlock() }()
 	job := M{"op": "process", "path": path, "limits": lim}
-	if thumb {
-		job["thumb"] = pathIn(filepath.Join(a.data, "thumbs"), key+".webp")
+	if thumb != "" {
+		job["thumb"] = thumb
 	}
-	ext := map[string]string{"webp": "webp", "jpeg": "jpg", "png": "png"}[str(lim["format"])]
-	ckey := strings.TrimSuffix(key, filepath.Ext(key)) + "." + ext
-	if compressed {
-		job["compressed"] = pathIn(filepath.Join(a.data, "compressed"), ckey)
+	if compressed != "" {
+		job["compressed"] = compressed
 	}
 	info, err := a.work(job)
 	if err != nil {
 		return nil, err
-	}
-	if _, ok := info["c_size"]; ok {
-		info["c_key"] = ckey
 	}
 	return info, nil
 }

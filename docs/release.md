@@ -49,6 +49,7 @@ go build -trimpath -ldflags="-s -w" -o gallery .
 cd ..
 python qa/regression.py
 python qa/features.py
+python qa/reliability.py
 python qa/check-compose.py
 python qa/memory-benchmark.py
 python scripts/sync-docs.py

@@ -99,6 +99,9 @@ func (a *App) maintenance(w http.ResponseWriter, r *http.Request) {
 	if !apply {
 		notFound()
 	}
+	if a.tasksBusy() {
+		fail(409, "后台图片任务进行中，请先暂停补齐并等待上传处理完成")
+	}
 	a.jobsMu.Lock()
 	busy := truth(a.job["running"])
 	a.jobsMu.Unlock()

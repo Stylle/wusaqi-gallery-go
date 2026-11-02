@@ -91,3 +91,25 @@ CREATE TABLE IF NOT EXISTS ip_geo (
     location   TEXT NOT NULL,
     checked_at TEXT NOT NULL
 );
+
+-- Durable work queues. Payloads stay on disk, never in SQLite or Go memory.
+CREATE TABLE IF NOT EXISTS repair_job (
+    id INTEGER PRIMARY KEY CHECK(id=1), status TEXT NOT NULL,
+    batch_size INTEGER NOT NULL, started_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS repair_items (
+    image_id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL DEFAULT 0,
+    error TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_repair_pending ON repair_items(status,next_attempt);
+CREATE TABLE IF NOT EXISTS upload_sessions (
+    id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, client_id TEXT NOT NULL,
+    filename TEXT NOT NULL, tag TEXT NOT NULL, size INTEGER NOT NULL, sha256 TEXT NOT NULL,
+    received INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'receiving',
+    image_id TEXT NOT NULL, key TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL, expires INTEGER NOT NULL,
+    UNIQUE(owner_id,client_id)
+);
+CREATE INDEX IF NOT EXISTS idx_upload_work ON upload_sessions(status,next_attempt);

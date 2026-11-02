@@ -35,6 +35,9 @@ type App struct {
 	notifications             chan notification
 	httpClient                *http.Client
 	stop                      chan struct{}
+	workerContext             context.Context
+	workerCancel              context.CancelFunc
+	workerWG                  sync.WaitGroup
 }
 
 func newApp(data, web string) *App {
@@ -46,6 +49,8 @@ func newApp(data, web string) *App {
 	a.poolCond = sync.NewCond(&a.poolMu)
 	a.db = openDB(filepath.Join(data, "metadata.db"))
 	a.initDB(true)
+	a.workerContext, a.workerCancel = context.WithCancel(context.Background())
+	a.recoverWork()
 	return a
 }
 func respond(w http.ResponseWriter, v any) {
@@ -117,6 +122,9 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		restore := r.Method == "POST" && r.URL.Path == "/api/admin/restore"
 		if restore {
+			if a.tasksBusy() {
+				fail(409, "后台图片任务进行中，请先暂停补齐并等待上传处理完成")
+			}
 			a.jobsMu.Lock()
 			busy := truth(a.job["running"])
 			a.jobsMu.Unlock()
@@ -125,6 +133,9 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			a.dataMu.Lock()
 			defer a.dataMu.Unlock()
+			if a.tasksBusy() {
+				fail(409, "后台图片任务进行中，请先暂停补齐并等待上传处理完成")
+			}
 			a.jobsMu.Lock()
 			busy = truth(a.job["running"])
 			a.jobsMu.Unlock()
@@ -135,7 +146,7 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			a.dataMu.RLock()
 			defer a.dataMu.RUnlock()
 		}
-		if r.Method != "GET" && r.Method != "HEAD" && r.URL.Path != "/api/images/batch/download" {
+		if r.Method != "GET" && r.Method != "HEAD" && r.URL.Path != "/api/images/batch/download" && !strings.HasPrefix(r.URL.Path, "/api/uploads") {
 			a.writeMu.Lock()
 			defer a.writeMu.Unlock()
 		}
@@ -191,7 +202,8 @@ type statusWriter struct {
 	status int
 }
 
-func (w *statusWriter) WriteHeader(n int) { w.status = n; w.ResponseWriter.WriteHeader(n) }
+func (w *statusWriter) WriteHeader(n int)           { w.status = n; w.ResponseWriter.WriteHeader(n) }
+func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	p, m := r.URL.Path, r.Method
 	switch {
@@ -238,6 +250,8 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		a.usersRoute(w, r)
 	case p == "/api/upload" && m == "POST":
 		a.upload(w, r)
+	case p == "/api/uploads" || strings.HasPrefix(p, "/api/uploads/"):
+		a.uploadSessions(w, r)
 	case p == "/api/images/batch" || p == "/api/images/batch/download":
 		a.batchImages(w, r)
 	case strings.HasPrefix(p, "/api/images/"):
@@ -275,12 +289,15 @@ func main() {
 	a := newApp(env("DATA_DIR", "../data"), env("WEB_DIR", "../frontend/dist"))
 	defer a.db.Close()
 	go a.background()
+	a.workerWG.Add(1)
+	go a.workLoop()
 	s := &http.Server{Addr: env("LISTEN_ADDR", "127.0.0.1:8000"), Handler: a, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 << 10}
 	stop, done := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer done()
 	go func() {
 		<-stop.Done()
 		close(a.stop)
+		a.workerCancel()
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		_ = s.Shutdown(ctx)
@@ -292,6 +309,7 @@ func main() {
 	if e := s.ListenAndServe(); e != nil && !errors.Is(e, http.ErrServerClosed) {
 		log.Fatal(e)
 	}
+	a.workerWG.Wait()
 }
 func remoteIP(r *http.Request) string {
 	host, _, e := net.SplitHostPort(r.RemoteAddr)

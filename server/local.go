@@ -188,6 +188,8 @@ func (a *App) importWorker(uid any) {
 }
 func (a *App) localRoute(w http.ResponseWriter, r *http.Request, u M) {
 	switch {
+	case strings.HasPrefix(r.URL.Path, "/api/admin/local/repair"):
+		a.repairRoute(w, r)
 	case r.URL.Path == "/api/admin/local/index" || r.URL.Path == "/api/admin/local/rebuild" || r.URL.Path == "/api/admin/local/clear-derived":
 		a.maintenance(w, r)
 	case r.URL.Path == "/api/admin/local/scan" && r.Method == "GET":
@@ -213,6 +215,9 @@ func (a *App) localRoute(w http.ResponseWriter, r *http.Request, u M) {
 		})
 		respond(w, M{"dryRun": true, "scanned": scanned, "indexed": a.count("SELECT COUNT(*) FROM images"), "pendingCount": pc, "invalidCount": ic, "pending": pending, "invalid": invalid})
 	case r.URL.Path == "/api/admin/local/import" && r.Method == "POST":
+		if a.repairActive() || a.count("SELECT COUNT(*) FROM repair_items WHERE status='processing'") > 0 {
+			fail(409, "请先暂停补齐队列并等待当前图片处理完毕")
+		}
 		a.jobsMu.Lock()
 		if truth(a.job["running"]) {
 			a.jobsMu.Unlock()
@@ -240,6 +245,9 @@ func (a *App) localRoute(w http.ResponseWriter, r *http.Request, u M) {
 		a.setJob(M{"cancel": true})
 		respond(w, M{"ok": true})
 	case r.URL.Path == "/api/admin/local/compress" && r.Method == "POST":
+		if r.URL.Query().Get("dry_run") == "false" && a.repairActive() {
+			fail(409, "补齐队列已在运行")
+		}
 		a.compressLocal(w, r)
 	default:
 		notFound()
