@@ -122,7 +122,8 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		restore := r.Method == "POST" && r.URL.Path == "/api/admin/restore"
 		if restore {
-			if a.tasksBusy() {
+			activeTasks := func() bool { a.dataMu.RLock(); defer a.dataMu.RUnlock(); return a.tasksBusy() }()
+			if activeTasks {
 				fail(409, "后台图片任务进行中，请先暂停补齐并等待上传处理完成")
 			}
 			a.jobsMu.Lock()

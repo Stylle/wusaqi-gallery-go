@@ -55,6 +55,8 @@ func (a *App) workLoop() {
 		case <-ticker.C:
 		}
 		func() {
+			a.dataMu.RLock()
+			defer a.dataMu.RUnlock()
 			defer func() {
 				if p := recover(); p != nil {
 					log.Printf("work queue: %v", p)
@@ -66,8 +68,6 @@ func (a *App) workLoop() {
 					})
 				}
 			}()
-			a.dataMu.RLock()
-			defer a.dataMu.RUnlock()
 			if time.Since(cleaned) > time.Hour {
 				a.writeMu.Lock()
 				func() { defer a.writeMu.Unlock(); a.expireUploads() }()
