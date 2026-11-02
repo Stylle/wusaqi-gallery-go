@@ -1,11 +1,47 @@
 package main
 
 import (
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestRestorePreflightWaitsForDatabaseReplacement(t *testing.T) {
+	a := testApp(t)
+	a.dataMu.Lock()
+	locked := true
+	defer func() {
+		if locked {
+			a.dataMu.Unlock()
+		}
+	}()
+	must(a.db.Close())
+	result := make(chan int, 1)
+	go func() {
+		recorder := httptest.NewRecorder()
+		a.ServeHTTP(recorder, httptest.NewRequest("POST", "/api/admin/restore", strings.NewReader("{}")))
+		result <- recorder.Code
+	}()
+	select {
+	case code := <-result:
+		t.Fatalf("restore queried a database during replacement: HTTP %d", code)
+	case <-time.After(30 * time.Millisecond):
+	}
+	a.db = openDB(filepath.Join(a.data, "metadata.db"))
+	a.dataMu.Unlock()
+	locked = false
+	select {
+	case code := <-result:
+		if code != 401 {
+			t.Fatalf("expected authentication failure on healthy replacement DB, got %d", code)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("restore request remained blocked")
+	}
+}
 
 func seedUploadTask(a *App, taskID, status string) {
 	a.insert("upload_sessions", M{"id": taskID, "owner_id": "admin", "client_id": taskID, "filename": "test.png", "tag": "", "size": 10, "sha256": "checksum", "received": 5, "status": status, "image_id": "image-" + taskID, "key": "uploads/" + taskID + ".png", "created_at": nowISO(), "updated_at": nowISO(), "expires": time.Now().Add(time.Hour).Unix()})
