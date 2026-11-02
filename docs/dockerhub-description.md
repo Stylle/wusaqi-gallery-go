@@ -2,7 +2,7 @@
 
 轻量、自部署的图片画廊与随机图 API。保留完整的 Vue 3 界面，用 **Go 单进程 + SQLite** 提供页面、图片和接口；Pillow 仅在处理图片时启动，完成即退出。适合 NAS、小内存 VPS 和个人图床。
 
-> Docker Hub 的 `latest` 已更新为 Go 架构，支持 `linux/amd64` 和 `linux/arm64`。当前发布版本为 `e5adfe8`，新增批量操作、索引维护与按标签随机；旧 Python 镜像保留为 `legacy-python-20261023`。升级前请备份整个 `data/` 目录。
+> Docker Hub 的 `latest` 已更新为 Go 架构，支持 `linux/amd64` 和 `linux/arm64`。当前发布版本为 `b0f4613`，新增自动补齐队列、断点续传与上传防重复提交；旧 Python 镜像保留为 `legacy-python-20261023`。升级前请备份整个 `data/` 目录。
 
 ## 有哪些功能
 
@@ -41,7 +41,7 @@
 
 目标是**不处理图片时约 20–70 MB，尽可能更低**；这是验证目标，不是所有机器上的硬保证。`GOMEMLIMIT=40MiB` 是 Go 运行时的软限制，不能当作整个容器内存上限。上传、压缩、导入、备份，以及 Linux 文件缓存会影响测量。架构评估、实测口径与复现步骤见 [架构与内存说明](https://github.com/Stylle/wusaqi-gallery-go/blob/main/docs/architecture.md)。
 
-新版 `e5adfe8` 本机真实 Docker 容器测试（WSL 2 / amd64）：一万条图片元数据、16 并发、1024 次请求，空闲 **10.54 MiB**，浏览后 **14.94 MiB**，大图上传完成后回落到 **15.44 MiB**。限制为 1 核 / 512 MiB 时，三阶段约 **9.95 / 14.29 / 14.50 MiB**。上传处理峰值单独计量；原始数据和平台限制见上方架构说明。
+新版 `b0f4613` 本机真实 Docker 容器测试（WSL 2 / amd64）：一万条图片元数据、16 并发、1024 次请求，空闲 **9.89 MiB**，浏览后 **15.67 MiB**，大图上传完成后回落到 **14.99 MiB**。限制为 1 核 / 512 MiB 时，三阶段约 **10.09 / 14.27 / 13.74 MiB**。上传处理峰值单独计量；原始数据和平台限制见上方架构说明。
 
 ## Docker 部署
 
@@ -173,7 +173,7 @@ GET    /api/auth/me
 POST   /api/auth/password                 # {old,new}
 POST   /api/upload                        # multipart files、tag
 POST   /api/uploads                       # {clientId,filename,size,sha256,tag}
-GET    /api/uploads                       # 当前用户最近 50 个任务
+GET    /api/uploads                       # 当前用户最多 50 个任务，未完成优先
 GET    /api/uploads/{id}                  # 状态、已确认 received、完成后的 item
 PUT    /api/uploads/{id}/chunk            # 原始字节；Upload-Offset、X-Chunk-SHA256
 POST   /api/uploads/{id}/complete         # 完整接收后入处理队列；可重复查询提交
