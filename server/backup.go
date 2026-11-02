@@ -242,6 +242,10 @@ func (a *App) restoreBackup(w http.ResponseWriter, r *http.Request, u M) {
 			fail(400, "invalid backup database")
 		}
 		candidate.initDB(false)
+		// Staging payloads are not part of backups; never replay historical work.
+		candidate.exec("DELETE FROM upload_sessions")
+		candidate.exec("DELETE FROM repair_items")
+		candidate.exec("DELETE FROM repair_job")
 		candidate.exec("DELETE FROM sessions")
 		images = candidate.count("SELECT COUNT(*) FROM images")
 		for _, im := range candidate.rows("SELECT key,c_key FROM images") {
@@ -293,6 +297,7 @@ func (a *App) restoreBackup(w http.ResponseWriter, r *http.Request, u M) {
 	a.db = openDB(filepath.Join(a.data, "metadata.db"))
 	a.initDB(false)
 	committed = true
+	a.cleanUploadStaging()
 	a.setJob(M{"running": false, "cancel": false, "current": ""})
 	a.fire("restore", "", M{"images": images, "files": copied, "operator": u["username"]})
 	respond(w, M{"ok": true, "relogin": true, "restored": M{"images": images, "files_copied": copied, "restored_at": nowISO()}})

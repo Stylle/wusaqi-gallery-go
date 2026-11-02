@@ -63,28 +63,25 @@ export const getRandom = (variant, token, tag = '') =>
 export const randomImageUrl = (variant, tag = '') => `/api/random/image?${new URLSearchParams({ variant, ...(tag ? { tag } : {}) })}`
 
 // ---------- 图片 ----------
-export const uploadOne = (token, file, tag, onProgress) => {
-  return new Promise((resolve, reject) => {
-    const fd = new FormData()
-    fd.append('files', file)
-    if (tag) fd.append('tag', tag)
-    const xhr = new XMLHttpRequest()
-    xhr.open('POST', '/api/upload')
-    xhr.setRequestHeader('Authorization', `Bearer ${token}`)
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total)
-    }
-    xhr.onload = () => {
-      try {
-        const d = JSON.parse(xhr.responseText)
-        if (xhr.status < 300 && d.results?.[0]?.ok) resolve(d)
-        else reject(new Error(d.results?.[0]?.error || d.detail || `HTTP ${xhr.status}`))
-      } catch { reject(new Error(`HTTP ${xhr.status}`)) }
-    }
-    xhr.onerror = () => reject(new Error('network error'))
-    xhr.send(fd)
-  })
+export async function uploadSessionRequest(token, method, path, value, headers = {}, signal) {
+  const controller = new AbortController()
+  const abort = () => controller.abort()
+  if (signal?.aborted) abort()
+  else signal?.addEventListener('abort', abort, { once: true })
+  const timer = setTimeout(abort, 60000)
+  const binary = value instanceof Blob
+  try {
+    return await fetch(path, { method, signal: controller.signal,
+      headers: { ...auth(token), ...(value !== undefined && !binary ? { 'Content-Type': 'application/json' } : {}), ...headers },
+      body: value === undefined ? undefined : binary ? value : JSON.stringify(value),
+    }).then(json)
+  } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort) }
 }
+export const repairQueue = (token, action = '', batchSize = 5) =>
+  fetch('/api/admin/local/repair' + (action && action !== 'start' ? '/' + action : ''), {
+    method: action ? 'POST' : 'GET', headers: { ...auth(token), 'Content-Type': 'application/json' },
+    ...(['start', 'resume', 'retry-failed'].includes(action) ? { body: JSON.stringify({ batchSize }) } : {}),
+  }).then(json)
 
 export const patchImage = (token, id, payload) =>
   fetch(`/api/images/${id}`, {

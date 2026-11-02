@@ -4,7 +4,7 @@ import {
   getSettings, saveSettings, getBans, getPublicSettings, getSystem,
   listUsers, createUser, updateUser, deleteUser, fmtSize,
   scanLocal, startLocalImport, localImportStatus, cancelLocalImport,
-  compressLocal, getStats, testNotify,
+  compressLocal, repairQueue, getStats, testNotify,
   inspectIndex, rebuildIndex, clearDerived,
   banIp, unbanIp, addWhitelist, removeWhitelist, addBlacklist, removeBlacklist,
   getBackupStats, downloadBackup, restoreBackup,
@@ -131,13 +131,18 @@ const compLimit = ref(5)
 const compInfo = ref(null)
 const compMsg = ref('')
 const compBusy = ref(false)
+const repair = ref(null)
+const repairRunning = computed(() => repair.value?.job.status === 'running')
+let repairTimer = null
+let repairPolling = false
+let panelAlive = true
 const indexInfo = ref(null)
 const indexBusy = ref(false)
 const indexMsg = ref('')
 const indexConfirm = ref(false)
 const indexDialog = ref(null)
 function askIndex(clear) {
-  if (indexBusy.value || localBusy.value || compBusy.value) return
+  if (indexBusy.value || localBusy.value || compBusy.value || repairRunning.value || repair.value?.counts.processing) return
   indexConfirm.value = clear
   indexDialog.value?.showModal()
 }
@@ -295,19 +300,44 @@ async function previewCompress() {
 }
 
 async function runCompress() {
+  if (!Number.isInteger(compLimit.value) || compLimit.value < 1 || compLimit.value > 50) { compMsg.value = t('每批张数应为 1–50'); return }
   compBusy.value = true
-  compMsg.value = t('压缩中…')
   try {
-    const d = await compressLocal(store.token, false, compLimit.value)
-    await previewCompress()
-    const extra = d.failed.length ? `，${t('失败')} ${d.failed.length} ` + t('张') : ''
-    compMsg.value = `${t('本次处理')} ${d.done} ${t('张')}${extra}，${t('剩余')} ${d.remaining} ${t('张')}`
-    await refreshMe()
+    repair.value = await repairQueue(store.token, 'start', compLimit.value)
+    compMsg.value = t('补齐队列已启动，后续批次会自动继续')
+    watchRepair()
   } catch (e) {
     compMsg.value = t('失败：') + e.message
   } finally {
     compBusy.value = false
   }
+}
+function watchRepair() {
+  clearInterval(repairTimer)
+  repairTimer = setInterval(pollRepair, 1500)
+}
+async function pollRepair() {
+  if (repairPolling || !panelAlive) return
+  repairPolling = true
+  try {
+    const d = await repairQueue(store.token)
+    if (!panelAlive) return
+    const previous = repair.value?.job.status
+    if (!repair.value || d.job.status === 'running') compLimit.value = d.job.batch_size || 5
+    repair.value = d
+    if (d.job.status !== 'running' && !d.counts.processing) {
+      const wasWatching = repairTimer !== null
+      clearInterval(repairTimer); repairTimer = null
+      if (previous === 'running' || wasWatching) { await previewCompress(); await refreshMe() }
+    }
+  } catch (e) { compMsg.value = t('状态查询失败，任务仍在后台运行') + ': ' + e.message }
+  finally { repairPolling = false }
+}
+async function controlRepair(action) {
+  compBusy.value = true
+  try { repair.value = await repairQueue(store.token, action, compLimit.value); watchRepair() }
+  catch (e) { compMsg.value = e.message }
+  finally { compBusy.value = false }
 }
 
 function blankForm() {
@@ -353,6 +383,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  panelAlive = false
+  clearInterval(repairTimer)
   clearInterval(localTimer)
   clearTimeout(toastTimer)
   applySite()
@@ -366,6 +398,8 @@ async function loadPanel(id) {
   if (id === 'bans') await loadBans()
   if (id === 'backup') await loadBackup()
   if (id === 'local') {
+    await pollRepair()
+    if (repair.value?.job.status === 'running' || repair.value?.counts.processing) watchRepair()
     try {
       const j = await localImportStatus(store.token)
       localJob.value = j
@@ -1055,11 +1089,11 @@ const notifyPreview = computed(() => {
         <template v-else-if="currentGroup()?.custom === 'local'">
           <div class="panel">
             <h3>{{ t('索引与文件维护') }}</h3>
-            <p class="muted">{{ t('直接在文件夹删除图片后，先检查再重建索引。缺少衍生格式时可补齐；也可清空后按当前压缩方案重新生成。') }}</p>
+            <p class="muted">{{ t('重建索引只清理原图已丢失的记录及对应生成文件；清空操作会删除全部缩略图和压缩图，原图保留。') }}</p>
             <div class="row">
               <button class="ghost" :disabled="indexBusy || localBusy || compBusy" @click="checkIndex">{{ t('检查索引') }}</button>
-              <button :disabled="indexBusy || localBusy || compBusy || !indexInfo" @click="askIndex(false)">{{ t('重建索引') }}</button>
-              <button class="ghost danger" :disabled="indexBusy || localBusy || compBusy" @click="askIndex(true)">{{ t('清空缩略图与压缩图') }}</button>
+              <button :disabled="indexBusy || localBusy || compBusy || repairRunning || repair?.counts.processing || !indexInfo" @click="askIndex(false)">{{ t('重建索引') }}</button>
+              <button class="ghost danger" :disabled="indexBusy || localBusy || compBusy || repairRunning || repair?.counts.processing" @click="askIndex(true)">{{ t('清空缩略图与压缩图') }}</button>
             </div>
             <p v-if="indexMsg" role="status">{{ indexMsg }}</p>
             <div v-if="indexInfo" class="muted">
@@ -1092,7 +1126,7 @@ const notifyPreview = computed(() => {
 
             <div class="row" style="margin:0">
               <button class="ghost" :disabled="localBusy" @click="previewLocal">{{ t('重新扫描') }}</button>
-              <button :disabled="localBusy" @click="doImport">
+              <button :disabled="localBusy || repairRunning" @click="doImport">
                 {{ t('一键导入全部') }}{{ localInfo?.pendingCount ? `（${localInfo.pendingCount}）` : '' }}
               </button>
               <button v-if="localJob?.running" class="ghost" @click="stopImport">{{ t('停止') }}</button>
@@ -1151,17 +1185,25 @@ const notifyPreview = computed(() => {
             <div class="row" style="margin:0">
               <button class="ghost" :disabled="compBusy" @click="previewCompress">{{ t('检查') }}</button>
               <label class="muted" style="display:flex;align-items:center;gap:6px">
-                {{ t('每次处理') }}
-                <input v-model.number="compLimit" type="number" min="1" max="50"
+                {{ t('每批张数') }}
+                <input v-model.number="compLimit" :disabled="repairRunning || compBusy" type="number" min="1" max="50"
                   style="width:76px" /> {{ t('张') }}
               </label>
-              <button :disabled="compBusy || !compInfo?.todoCount" @click="runCompress">
-                {{ t('开始补') }} {{ Math.min(compLimit, compInfo?.todoCount || 0) }} {{ t('张') }}
+              <button :disabled="compBusy || localBusy || repairRunning || repair?.counts.processing || !compInfo?.todoCount" @click="runCompress">
+                {{ t('一键补齐全部') }} ({{ compInfo?.todoCount || 0 }})
               </button>
+              <button v-if="repairRunning" class="ghost" :disabled="compBusy" @click="controlRepair('pause')">{{ t('暂停队列') }}</button>
+              <button v-if="repair?.job.status === 'paused'" class="ghost" :disabled="compBusy || localBusy" @click="controlRepair('resume')">{{ t('继续队列') }}</button>
+              <button v-if="repair?.counts.failed && !repairRunning" class="ghost" :disabled="compBusy || localBusy || repair.counts.processing" @click="controlRepair('retry-failed')">{{ t('重试失败项') }}</button>
             </div>
             <p class="hint muted">
-              {{ t('压缩吃 CPU。低配 VPS（1 核 1G）建议每次 3~5 张，点几次把积压清完；单张通常 0.3~2 秒，具体取决于原图分辨率。') }}
+              {{ t('每批处理完成后自动继续下一批，无需反复点击。逐张压缩以控制内存；失败最多自动重试三次。队列保存在数据库，关闭页面不影响执行，服务重启后会继续；暂停会等待当前图片结束。') }}
             </p>
+            <div v-if="repair?.counts.total" role="status" aria-live="polite">
+              <p>{{ t('队列状态') }}: {{ t(({ running: '运行中', paused: '已暂停', completed: '已完成' })[repair.job.status] || repair.job.status) }} · {{ t('总计') }} {{ repair.counts.total }} · {{ t('成功') }} {{ repair.counts.done }} · {{ t('待处理') }} {{ repair.counts.pending }} · {{ t('处理中…') }} {{ repair.counts.processing }} · {{ t('失败') }} {{ repair.counts.failed }} · {{ t('跳过') }} {{ repair.counts.skipped }} · {{ t('自动重试') }} {{ repair.counts.retried }}</p>
+              <div class="bar"><div :style="{ width: ((repair.counts.done + repair.counts.failed + repair.counts.skipped) / repair.counts.total * 100) + '%' }"></div></div>
+              <details v-if="repair.failures.length"><summary>{{ t('查看失败明细') }}</summary><p v-for="f in repair.failures" :key="f.image_id" class="mono index-detail">{{ f.image_id }} · {{ t('处理尝试') }} {{ f.attempts }}/4 · {{ f.error }}</p></details>
+            </div>
             <div v-if="compInfo?.items?.length" style="margin-top:8px">
               <div v-for="i in compInfo.items" :key="i.key" class="mono muted" style="font-size:11.5px">
                 {{ i.filename }} · {{ fmtSize(i.size) }}
@@ -1207,6 +1249,15 @@ GET /api/random/image?variant=compressed|original[&amp;tag=cat]   # 302 {{ t('�
 # Optional tag: exact match; URL-encode its value. No matches: 404.</pre>
 
           <h3>{{ t('图片（登录）') }}</h3>
+          <pre>POST   /api/uploads                    {"clientId":"unique-client-id","filename":"a.png","size":123,"sha256":"64 hex characters","tag":""}
+GET    /api/uploads                    # Recent 50 tasks belonging to this user
+GET    /api/uploads/{id}               # status, received, chunkSize, item when done
+PUT    /api/uploads/{id}/chunk         # Raw bytes; Upload-Offset, X-Chunk-SHA256
+POST   /api/uploads/{id}/complete      # Idempotent, queues image processing
+POST   /api/uploads/{id}/retry         # Retry exhausted processing after fixing the cause
+DELETE /api/uploads/{id}               # Cancel unfinished task
+# 1 MiB chunks. Initial attempt + 3 retries. Private staging expires after 24h.
+# Keep the same clientId/offset when a response is lost; query status to reconcile.</pre>
           <pre>POST   /api/upload        multipart: files=@a.png&amp;tag=xxx
 PATCH  /api/images/{id}   {"filename":"newname"}  {{ t('重命名（原图/压缩/缩略图同步）') }}
                           {"tag":"landscape"}          {{ t('改标签') }}
@@ -1258,6 +1309,11 @@ POST /api/admin/local/import            {{ t('启动后台全量导入（含失�
 GET  /api/admin/local/status            {{ t('导入进度轮询') }}
 POST /api/admin/local/import/cancel     {{ t('取消进行中的导入') }}
 POST /api/admin/local/compress?dry_run=true&amp;limit=5
+GET  /api/admin/local/repair             # Durable queue status
+POST /api/admin/local/repair             # { "batchSize": 5 }, all missing assets
+POST /api/admin/local/repair/pause
+POST /api/admin/local/repair/resume
+POST /api/admin/local/repair/retry-failed # Reset exhausted items explicitly
 GET  /api/admin/local/index             # 检查原图和衍生文件
 POST /api/admin/local/rebuild           # 清理无效记录、重置失效压缩图引用
 POST /api/admin/local/clear-derived     # { "confirm": "clear-derived" }</pre>

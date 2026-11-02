@@ -7,6 +7,19 @@ to the OS, including memory retained by image codecs after a large upload.
 import json
 import os
 import sys
+import tempfile
+
+
+def atomic_save(img, dest, fmt, **kwargs):
+    """Never leave a half-written image at a path the gallery can serve."""
+    fd, temp = tempfile.mkstemp(prefix='.image-', dir=os.path.dirname(dest))
+    os.close(fd)
+    try:
+        img.save(temp, fmt, **kwargs)
+        os.replace(temp, dest)
+    finally:
+        if os.path.exists(temp):
+            os.unlink(temp)
 
 
 def run(job):
@@ -35,7 +48,7 @@ def run(job):
             small.thumbnail((600, 4800), Image.Resampling.LANCZOS)
             if small.mode not in ("RGB", "RGBA"):
                 small = small.convert("RGB")
-            small.save(thumb, "WEBP", quality=lim["thumbQuality"], method=lim["thumbMethod"])
+            atomic_save(small, thumb, "WEBP", quality=lim["thumbQuality"], method=lim["thumbMethod"])
             small.close()
         dest = job.get("compressed")
         if dest and fmt != "GIF":
@@ -48,7 +61,7 @@ def run(job):
             kwargs = {"optimize": True}
             if out_fmt != "PNG":
                 kwargs.update(quality=lim["quality"], method=lim["method"])
-            img.save(dest, out_fmt, **kwargs)
+            atomic_save(img, dest, out_fmt, **kwargs)
             info.update(c_width=img.width, c_height=img.height,
                         c_size=os.path.getsize(dest),
                         c_mime={"webp": "image/webp", "jpeg": "image/jpeg", "png": "image/png"}[lim["format"]])

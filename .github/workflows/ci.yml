@@ -51,6 +51,7 @@ jobs:
         run: |
           python qa/regression.py
           python qa/features.py
+          python qa/reliability.py
           python qa/check-compose.py
       - name: Check README synchronization
         shell: bash
@@ -75,3 +76,4 @@ jobs:
         run: |
           python qa/regression.py
           python qa/features.py
+          python qa/reliability.py

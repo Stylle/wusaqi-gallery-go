@@ -550,6 +550,21 @@ const EN = {
 
 // 带变量的后端消息（正则 + 取值函数）
 Object.assign(EN, {
+  '网络或服务暂时不可用，自动重试已用完；可点击继续查询或续传': 'Network or server unavailable after three retries. Resume to check the result or continue the transfer',
+  '每批张数': 'Images per batch', '一键补齐全部': 'Repair all missing assets', '暂停队列': 'Pause queue', '继续队列': 'Resume queue', '重试失败项': 'Retry failed items',
+  '补齐队列已启动，后续批次会自动继续': 'Repair queue started. Subsequent batches run automatically.',
+  '每批张数应为 1–50': 'Batch size must be between 1 and 50',
+  '重建索引只清理原图已丢失的记录及对应生成文件；清空操作会删除全部缩略图和压缩图，原图保留。': 'Rebuild removes records whose originals are missing and their derivatives. Clear removes ALL thumbnails and compressed images, keeping originals.',
+  '每批处理完成后自动继续下一批，无需反复点击。逐张压缩以控制内存；失败最多自动重试三次。队列保存在数据库，关闭页面不影响执行，服务重启后会继续；暂停会等待当前图片结束。': 'Batches continue automatically. Images are processed one at a time to bound memory, with up to three retries. The queue survives page closure and server restarts. Pausing finishes the current image first.',
+  '队列状态': 'Queue status', '运行中': 'Running', '总计': 'Total', '待处理': 'Pending', '跳过': 'Skipped', '处理尝试': 'Processing attempts',
+  '状态查询失败，任务仍在后台运行': 'Status unavailable; the task continues on the server',
+  '等待上传': 'Waiting', '校验文件中…': 'Checking file…', '上传中': 'Uploading', '等待图片处理': 'Waiting for image processing', '图片处理中…': 'Processing image…',
+  '网络重试': 'Network retry', '暂停传输或状态查询': 'Pause transfer or status checks', '重新选择同一文件续传': 'Select the same file to resume',
+  '继续或查询结果': 'Resume or check result', '重试图片处理': 'Retry image processing', '取消任务': 'Cancel task', '处理失败': 'Processing failed',
+  '已暂停，可继续；已提交的后台处理不会中止': 'Paused. You can resume; submitted server-side processing continues.',
+  '文件与原上传任务不一致，请选择同一文件': 'This file does not match the upload task. Select the same file.',
+  '上传任务恢复失败，可刷新重试': 'Could not restore upload tasks. Refresh to retry.',
+  '分块上传支持断点续传；网络失败最多自动重试三次。传输完成后继续等待图片处理，只有全部成功才进入画廊。关闭页面后可恢复任务；未传完的文件需要重新选择同一文件，暂存保留 24 小时。': 'Chunked uploads resume after interruption and retry network failures up to three times. Images enter the gallery only after processing succeeds. Tasks can be recovered after closing this page; reselect the same file to resume an incomplete transfer. Staged uploads expire after 24 hours.',
   '张 · 点击选择图片，再使用上方批量操作': ' images · Select images, then use the batch actions above',
   '批量处理': 'Batch actions', '退出批量': 'Exit batch mode', '已选择': 'Selected',
   '选择图片': 'Select image', '全选已加载': 'Select loaded images', '取消选择': 'Clear selection',
