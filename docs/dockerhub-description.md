@@ -259,44 +259,7 @@ POST   /api/admin/notify/test
 
 ## 本地运行和验证
 
-需要 Go ≥1.26、Node.js ≥22、Python ≥3.11。先构建前端和 Go 服务，再运行，无需 Docker。
-
-```bash
-cd frontend
-npm ci
-npm test
-npm run build
-cd ../server
-go build -trimpath -ldflags="-s -w" -o gallery .
-cd ..
-python -m venv .venv
-# Linux/macOS: .venv/bin/python；Windows: .venv/Scripts/python.exe
-.venv/bin/python -m pip install -r backend/requirements.txt
-cd server
-ADMIN_USERNAME=admin ADMIN_PASSWORD=local-test PYTHON=../.venv/bin/python ./gallery
-# http://127.0.0.1:8000
-```
-
-Windows PowerShell 可使用 `scripts/dev.ps1`，它会在项目内准备工具依赖、构建并启动本地服务；首次执行前安装好 Go、Node.js 和 Python。
-
-开发前端时，在 `frontend/` 执行 `npm run dev`，默认将 API 和图片代理到 `127.0.0.1:8000`。生产页面由 Go 服务直接提供。
-
-```bash
-cd server && go test ./... && go vet ./...
-cd ..
-python qa/regression.py
-python qa/features.py
-python qa/reliability.py
-python qa/privacy.py
-python qa/metadata.py
-python qa/metadata-cleanup.py
-python qa/check-compose.py
-python qa/memory-benchmark.py
-```
-
-回归使用 `.qa-data` 内的独立临时数据，覆盖旧库迁移、权限、上传、标签、游标、配额、防御、导入、备份恢复和重启。内存测试额外需要 `psutil`，结果不包含浏览器、编译器和 Node 开发服务器。
-
-后台界面与功能验收、手机端设计修复及对应测试范围，见 [验收记录](https://github.com/Stylle/wusaqi-gallery-go/blob/main/docs/qa-review.md)。
+完整的本地开发、构建和测试步骤见 [GitHub README](https://github.com/Stylle/wusaqi-gallery-go/blob/main/README.md#本地运行和验证)。功能与界面验证见 [验收记录](https://github.com/Stylle/wusaqi-gallery-go/blob/main/docs/qa-review.md)。
 
 ## 项目结构与发布
 
@@ -310,7 +273,7 @@ scripts/              本地启动、文档同步、镜像发布
 Dockerfile            Vue 构建 → Go 构建 → Go + 按需 Pillow 运行环境
 ```
 
-维护者发布流程见 [发布说明](https://github.com/Stylle/wusaqi-gallery-go/blob/main/docs/release.md)。`README.md` 是介绍的主源，执行 `python scripts/sync-docs.py` 生成 Docker Hub 版文档，发布时同步上传。构建镜像和更新 GitHub/Docker Hub 元数据需要维护者自己的登录授权。
+维护者发布流程见 [发布说明](https://github.com/Stylle/wusaqi-gallery-go/blob/main/docs/release.md)。`README.md` 是介绍的主源，执行 `python scripts/sync-docs.py` 生成 Docker Hub 版文档，发布时同步上传；受 Docker Hub 25,000 字节限制，超长时本地开发章节改为完整文档链接。构建镜像和更新 GitHub/Docker Hub 元数据需要维护者自己的登录授权。
 
 历史 `PLAN` 文档只记录旧版本设计，以当前源码和本 README 为准。
 
