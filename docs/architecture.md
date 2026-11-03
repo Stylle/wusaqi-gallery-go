@@ -141,3 +141,10 @@ docker inspect --format '{{json .State.Health}}' wusaqi-memory-test
 应分别报告 Docker stats、cgroup anonymous/file memory 与稳态请求情况；不能把 Windows working set、Go heap、容器包含文件缓存的 usage 混为同一指标。镜像磁盘大小也不等于运行内存。
 
 不建议把容器硬限制直接设成 70 MB：图片解码峰值明显高于常驻目标，硬限制会使上传 OOM。低配主机可在后台选轻量方案、保持低并发，按真实图片尺寸验证上传峰值。
+
+
+## 2026-11-03 隐私与元数据清理版实测
+
+功能源码 `217c38f`，镜像摘要与双架构信息见 [发布记录](release.md)。一万条图片元数据、16 并发、1024 次请求；默认容器空闲 12.31 MiB、浏览后 16.25 MiB、上传结束后中位数 16.20 MiB，图片处理峰值 126.82 MiB。1 核 / 512 MiB 下对应 10.78 / 14.69 / 14.47 MiB，处理峰值 125.15 MiB。均为 Docker usage 口径，处理峰值不计入常驻目标。
+
+原始数据：[默认资源](benchmarks/docker-metadata-amd64.json)、[1 核 / 512 MiB](benchmarks/docker-metadata-amd64-512m.json)。新增任务队列仍只在处理图片时启动 Pillow，清理/压缩结束后退出；元数据清理与上传完整性、权限及故障回滚另由真实 HTTP 测试验证，不能把稳态数字当作任意图片的解码峰值上限。
