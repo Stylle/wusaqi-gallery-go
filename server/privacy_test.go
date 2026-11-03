@@ -139,3 +139,31 @@ func TestSharedDerivativeFailsClosedForMixedPrivacy(t *testing.T) {
 		t.Fatal("shared derivative exposed private bytes")
 	}
 }
+
+func TestTagPoliciesMergeLegacyNullAndEmptyTags(t *testing.T) {
+	a := testApp(t)
+	privacyImage(a, "empty", "")
+	privacyImage(a, "legacy", "")
+	a.exec("UPDATE images SET tag=NULL WHERE id='legacy'")
+	privacySession(a, "admin", "admin-token")
+	w := privacyRequest(a, "GET", "/api/admin/tags", "", "admin-token")
+	var result struct {
+		Tags []struct {
+			Name  string
+			Count int
+		}
+	}
+	must(json.Unmarshal(w.Body.Bytes(), &result))
+	n := 0
+	for _, row := range result.Tags {
+		if row.Name == "" {
+			n++
+			if row.Count != 2 {
+				t.Fatal("legacy and empty tag counts split")
+			}
+		}
+	}
+	if n != 1 {
+		t.Fatal("duplicate untagged policy rows")
+	}
+}

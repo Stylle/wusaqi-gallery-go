@@ -295,9 +295,14 @@ watch(grid, (el, old) => {
   if (el) resizeObserver?.observe(el)
 })
 
+let tagGeneration = 0
 async function reloadTags() {
+  const version = ++tagGeneration
+  const token = store.token
   try {
-    tags.value = (await getTags(store.token, isAdmin.value && ui.showPrivate)).tags || []
+    const result = await getTags(token, isAdmin.value && ui.showPrivate)
+    if (version !== tagGeneration || token !== store.token || !mounted) return
+    tags.value = result.tags || []
     if (ui.activeTag && !tags.value.some(tg => tg.name === ui.activeTag)) ui.activeTag = ''
   } catch { /* keep existing tags on a transient error */ }
 }
@@ -323,6 +328,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   mounted = false
+  tagGeneration++
   generation++
   controller?.abort()
   observer?.disconnect()
