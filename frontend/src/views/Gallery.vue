@@ -1,8 +1,9 @@
 <script setup>
+import { shareUrl } from '../media.js'
 import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import { columnsFor, masonryColumns } from '../layout.js'
 import { getImages, getTags, copyText, patchImage, deleteImage, fmtSize, batchImages, downloadImages } from '../api.js'
-import { store, ui, setViewSize } from '../auth.js'
+import { store, ui, isAdmin, setViewSize } from '../auth.js'
 import { absUrl } from '../site.js'
 import { t } from '../i18n.js'
 
@@ -88,7 +89,7 @@ async function load(reset = false) {
   try {
     const d = await getImages({
       cursor: cursor.value, limit: LIMIT, signal: controller.signal,
-      tag: ui.activeTag, mine: ui.onlyMine && store.ok, token: store.token,
+      includePrivate: isAdmin.value && ui.showPrivate, tag: ui.activeTag, mine: ui.onlyMine && store.ok, token: store.token,
     })
     if (requestGeneration !== generation) return
     const seen = new Set(items.value.map(it => it.id))
@@ -180,9 +181,8 @@ async function copyUrl(which) {
   ctx.value = null
   if (!it) return
   if (!store.ok) { flash(t('游客不能复制链接，请先登录')); return }
-  const map = { original: it.url, compressed: it.compressed, thumb: it.thumb }
-  const p = map[which]
-  if (!p) { flash(t('该图没有这个版本')); return }
+  const p = shareUrl(it, which)
+  if (!p) { flash(t('此图片未开放外链')); return }
   try { await copyText(absUrl(p)); flash(t('已复制链接')) }
   catch (e) { flash(e.message) }
 }
@@ -249,7 +249,7 @@ async function confirmDialog() {
       }
       dialog.value = null
       await reloadTags()
-      if (d.type === 'batch-tag' && ui.activeTag) await load(true)
+      if (d.type === 'batch-tag') await load(true)
     } else if (d.type === 'tag') {
       const updated = await patchImage(store.token, d.item.id, { tag: d.value.trim() })
       const i = items.value.findIndex(x => x.id === updated.id)
@@ -258,7 +258,7 @@ async function confirmDialog() {
       dialog.value = null
       await reloadTags()
       // Removing a label from the last image also clears a stale filter.
-      if (ui.activeTag && updated.tag !== ui.activeTag) await load(true)
+      if ((ui.activeTag && updated.tag !== ui.activeTag) || (updated.private && !ui.showPrivate)) await load(true)
       flash(t('标签已更新'))
     } else if (d.type === 'rename') {
       const name = (d.value || '').trim()
@@ -289,7 +289,7 @@ function onKey(e) {
   if (e.key === 'Escape' && !dialogBusy.value && !batchBusy.value) { if (dialog.value) dialog.value = null; else if (batchMode.value) endBatch(); else closeLightbox() }
 }
 
-watch(() => [ui.activeTag, ui.onlyMine, store.token], () => { if (mounted) load(true); if (!store.ok) endBatch() })
+watch(() => [ui.activeTag, ui.onlyMine, ui.showPrivate, store.token, store.user?.role], () => { if (mounted) { load(true); reloadTags() }; if (!store.ok) endBatch() })
 watch(grid, (el, old) => {
   if (old) resizeObserver?.unobserve(old)
   if (el) resizeObserver?.observe(el)
@@ -297,7 +297,7 @@ watch(grid, (el, old) => {
 
 async function reloadTags() {
   try {
-    tags.value = (await getTags()).tags || []
+    tags.value = (await getTags(store.token, isAdmin.value && ui.showPrivate)).tags || []
     if (ui.activeTag && !tags.value.some(tg => tg.name === ui.activeTag)) ui.activeTag = ''
   } catch { /* keep existing tags on a transient error */ }
 }
@@ -347,6 +347,9 @@ onUnmounted(() => {
     <span class="spacer"></span>
     <label class="mine-toggle" v-if="store.ok" :class="{ on: ui.onlyMine }">
       <input type="checkbox" v-model="ui.onlyMine" /> {{ t('仅我的') }}
+    </label>
+    <label v-if="isAdmin" class="mine-toggle" :class="{ on: ui.showPrivate }">
+      <input type="checkbox" v-model="ui.showPrivate" /> {{ t('显示私密图片') }}
     </label>
     <div class="size-switch">
       <button v-for="sz in [['s', '小'], ['m', '中'], ['l', '大']]" :key="sz[0]"
@@ -433,11 +436,12 @@ onUnmounted(() => {
 
   <!-- 右键菜单 -->
   <div v-if="ctx" class="ctxmenu" :style="{ left: ctx.x + 'px', top: ctx.y + 'px' }" @click.stop>
-    <button :disabled="!store.ok" @click="copyUrl('original')">{{ t('复制原图 URL') }}</button>
-    <button :disabled="!store.ok || !ctx.item.compressed" @click="copyUrl('compressed')">
+    <button :disabled="!store.ok || !shareUrl(ctx.item, 'original')" @click="copyUrl('original')">{{ t('复制原图 URL') }}</button>
+    <button :disabled="!store.ok || !shareUrl(ctx.item, 'compressed')" @click="copyUrl('compressed')">
       {{ t('复制压缩图 URL') }}{{ ctx.item.compressed ? '' : t('（无）') }}
     </button>
-    <button :disabled="!store.ok || !ctx.item.thumb" @click="copyUrl('thumb')">{{ t('复制缩略图 URL') }}</button>
+    <button :disabled="!store.ok || !shareUrl(ctx.item, 'thumb')" @click="copyUrl('thumb')">{{ t('复制缩略图 URL') }}</button>
+    <p v-if="!shareUrl(ctx.item, 'original')" class="muted" style="padding:0 12px;font-size:12px">{{ t('此图片未开放外链') }}</p>
     <div class="sep"></div>
     <button @click="downloadUrl('original')">⬇️ {{ t('下载原图') }}</button>
     <button :disabled="!ctx.item.compressed" @click="downloadUrl('compressed')">
@@ -472,7 +476,7 @@ onUnmounted(() => {
         <p v-if="dialog.type === 'batch-tag'" class="muted">{{ t('统一设置所选图片的标签，留空则清除。') }} ({{ dialog.ids.length }})</p>
         <div class="field">
           <input v-model="dialog.value" maxlength="40" list="gallery-tags" @keyup.enter="confirmDialog" :placeholder="t('留空可移除标签')" />
-          <datalist id="gallery-tags"><option v-for="tg in tags" :key="tg.name" :value="tg.name" /></datalist>
+          <datalist id="gallery-tags"><option v-if="isAdmin" value="私密" /><option v-for="tg in tags" :key="tg.name" :value="tg.name" /></datalist>
         </div>
       </template>
       <template v-else>

@@ -226,6 +226,7 @@ func (a *App) initDB(syncAdmin bool) {
 		}
 		a.exec("INSERT OR IGNORE INTO settings(k,v) VALUES(?,?)", k, v)
 	}
+	a.exec("INSERT OR IGNORE INTO settings(k,v) VALUES('_viewer_secret',?)", id(32))
 	admin := a.one("SELECT * FROM users WHERE role='admin' ORDER BY created_at LIMIT 1")
 	if admin == nil {
 		name := adminUsername()

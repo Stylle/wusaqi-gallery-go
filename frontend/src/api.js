@@ -1,5 +1,6 @@
 // 纯 fetch 封装：token 由调用方显式传入，避免与 auth.js 循环依赖
 import { t } from './i18n.js'
+import { prepareMedia } from './media.js'
 
 // 全局 401 通知：由 App.vue 注册，用于提示「登录已失效」
 let unauthHandler = null
@@ -16,7 +17,7 @@ const json = async (res, opts = {}) => {
     }
     throw err
   }
-  return res.json()
+  return prepareMedia(await res.json())
 }
 
 // 没 token 就不要发空的 "Bearer "（后端会当成匿名 → 401 login required）
@@ -25,13 +26,15 @@ const auth = (token) => (token ? { Authorization: `Bearer ${token}` } : {})
 // ---------- 站点 ----------
 export const getPublicSettings = () =>
   fetch('/api/public/settings', { cache: 'no-store' }).then(json)
-export const getTags = () => fetch('/api/tags').then(json)
+export const getTags = (token = '', includePrivate = false) => fetch('/api/tags' + (includePrivate ? '?include_private=1' : ''), { headers: auth(token) }).then(json)
+export const getAdminTags = token => fetch('/api/admin/tags', { headers: auth(token) }).then(json)
 
-export const getImages = ({ page = 1, limit = 36, cursor = '', tag = '', mine = false, token = '', signal } = {}) => {
+export const getImages = ({ page = 1, limit = 36, cursor = '', tag = '', mine = false, token = '', includePrivate = false, signal } = {}) => {
   const q = new URLSearchParams({ page, limit })
   if (cursor) q.set('cursor', cursor)
   if (tag) q.set('tag', tag)
   if (mine) q.set('mine', '1')
+  if (includePrivate) q.set('include_private', '1')
   return fetch(`/api/images?${q}`, { headers: auth(token), signal }).then(json)
 }
 

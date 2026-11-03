@@ -40,7 +40,7 @@ func (a *App) uploadStatus(row, u M) M {
 	out := M{"id": row["id"], "clientId": row["client_id"], "name": row["filename"], "size": row["size"], "received": row["received"], "status": row["status"], "attempts": row["attempts"], "maxRetries": 3, "error": row["error"], "expires": row["expires"], "chunkSize": uploadChunkSize}
 	out["sha256"], out["tag"] = row["sha256"], row["tag"]
 	if row["status"] == "done" {
-		if im := a.image(row["image_id"]); im != nil {
+		if im := a.image(row["image_id"]); canViewImage(im, u) {
 			out["item"] = a.itemJSON(im, u)
 		} else {
 			out["status"] = "deleted"
@@ -79,7 +79,7 @@ func (a *App) uploadSessions(w http.ResponseWriter, r *http.Request) {
 		if b, e := hex.DecodeString(checksum); e != nil || len(b) != 32 {
 			fail(400, "file SHA256 is required")
 		}
-		tag := truncate(strings.TrimSpace(str(v["tag"])), 40)
+		tag := cleanTag(v["tag"], u)
 		if !clientIDPattern.MatchString(client) || size < 1 || size > 200<<20 || filename == "" || len(filename) > 240 {
 			fail(400, "上传参数无效，单图最多 200MiB")
 		}

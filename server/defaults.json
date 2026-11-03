@@ -38,5 +38,10 @@
   "rate_ban_minutes": "10",
   "webhook_url": "",
   "auth_max_fails": "10",
-  "auth_ban_minutes": "10"
+  "auth_ban_minutes": "10",
+  "site_public": "1",
+  "external_links_enabled": "1",
+  "external_disabled_tags": "[]",
+  "copyright_notice": "如本站内容涉嫌侵权或违规，请联系管理员处理。",
+  "copyright_contact": ""
 }

@@ -76,7 +76,7 @@ func (a *App) user(r *http.Request) M {
 	if token == "" {
 		return nil
 	}
-	return a.one("SELECT u.* FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token=? AND s.expires_at>? AND COALESCE(u.enabled,1)=1", token, nowISO())
+	return a.tokenUser(token)
 }
 func (a *App) require(r *http.Request, admin bool) M {
 	u := a.user(r)
@@ -162,20 +162,8 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.api(sw, r)
 		return
 	}
-	for prefix, dir := range map[string]string{"/files/": "uploads", "/thumbs/": "thumbs", "/compressed/": "compressed"} {
-		if strings.HasPrefix(r.URL.Path, prefix) {
-			a.dataMu.RLock()
-			defer a.dataMu.RUnlock()
-			p := pathIn(filepath.Join(a.data, dir), strings.TrimPrefix(r.URL.Path, prefix))
-			fi, e := os.Stat(p)
-			if e != nil || fi.IsDir() {
-				http.NotFound(w, r)
-				return
-			}
-			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-			http.ServeFile(w, r, p)
-			return
-		}
+	if a.serveMedia(w, r) {
+		return
 	}
 	if r.Method != "GET" && r.Method != "HEAD" {
 		http.NotFound(w, r)
@@ -207,6 +195,10 @@ func (w *statusWriter) WriteHeader(n int)           { w.status = n; w.ResponseWr
 func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	p, m := r.URL.Path, r.Method
+	w.Header().Set("Cache-Control", "no-store")
+	if a.settings()["site_public"] != "1" && a.user(r) == nil && p != "/api/health" && p != "/api/public/settings" && p != "/api/auth/login" && p != "/api/auth/logout" {
+		fail(401, "站点未开放公开访问，请先登录")
+	}
 	switch {
 	case p == "/api/health" && m == "GET":
 		a.count("SELECT 1")
@@ -214,9 +206,19 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	case p == "/api/public/settings" && m == "GET":
 		s := a.settings()
 		out := M{}
-		for _, k := range []string{"site_title", "site_icon", "site_tags", "site_footer", "random_public", "share_base_url", "upload_default_tags", "theme_style"} {
+		for _, k := range []string{"site_title", "site_icon", "site_tags", "site_footer", "random_public", "share_base_url", "upload_default_tags", "theme_style", "site_public", "external_links_enabled", "copyright_notice", "copyright_contact"} {
 			out[k] = s[k]
 		}
+		for _, k := range []string{"site_tags", "upload_default_tags"} {
+			visible := []string{}
+			for _, tag := range strings.Split(s[k], ",") {
+				if strings.TrimSpace(tag) != privateTag {
+					visible = append(visible, tag)
+				}
+			}
+			out[k] = strings.Join(visible, ",")
+		}
+		a.setViewerCookie(w, r, s)
 		out["upload_max_mb"] = s["upload_max_mb"]
 		out["upload_formats"] = "jpg,jpeg,png,webp,avif,gif,bmp"
 		respond(w, out)
@@ -224,7 +226,7 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		a.images(w, r)
 	case p == "/api/tags" && m == "GET":
 		out := []M{}
-		rows := a.rows("SELECT tag AS name,COUNT(*) AS count FROM images WHERE tag IS NOT NULL AND trim(tag)!='' GROUP BY tag ORDER BY count DESC,tag")
+		rows := a.rows("SELECT i.tag AS name,COUNT(*) AS count FROM images i WHERE i.tag IS NOT NULL AND trim(i.tag)!='' AND " + privateFilter(r, a.user(r)) + " GROUP BY i.tag ORDER BY count DESC,i.tag")
 		used := map[string]M{}
 		seen := map[string]bool{}
 		for _, row := range rows {

@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import {
-  getSettings, saveSettings, getBans, getPublicSettings, getSystem,
+  getSettings, saveSettings, getAdminTags, getBans, getPublicSettings, getSystem,
   listUsers, createUser, updateUser, deleteUser, fmtSize,
   scanLocal, startLocalImport, localImportStatus, cancelLocalImport,
   compressLocal, repairQueue, getStats, testNotify,
@@ -30,9 +30,15 @@ const groups = [
         options: [{ v: 'solid', label: '纯色' }, { v: 'gradient', label: '炫彩' }],
         hint: '纯色 = 单一主色，素净清爽；炫彩 = 渐变彩色，更活泼' },
     ] },
-    { id: 'share', label: '🔗 分享与上传', fields: [
+    { id: 'share', label: '🔗 公开访问与外链', fields: [
+      { k: 'site_public', label: '允许站点公开访问', type: 'switch', hint: '关闭后画廊、标签、随机图与全部外链均需登录或停止公开服务；登录入口保留' },
+      { k: 'external_links_enabled', label: '允许图片外链', type: 'switch', hint: '关闭后原图、压缩图、缩略图的分享地址全部失效；站内浏览不受影响' },
       { k: 'share_base_url', label: '分享基址', hint: '复制链接用的域名，如 https://img.example.com；留空 = 用当前访问地址' },
       { k: 'upload_default_tags', label: '上传默认标签', hint: '逗号分隔，上传页默认选中第一个' },
+    ] },
+    { id: 'copyright', label: '© 版权与联系', fields: [
+      { k: 'copyright_notice', label: '版权与违规说明', type: 'textarea', hint: '显示在页脚，留空可隐藏；最多 500 字' },
+      { k: 'copyright_contact', label: '联系方式', hint: '如邮箱、QQ 或其他联系方式，最多 500 字；以纯文字显示' },
     ] },
   ]},
   { title: '图片处理', items: [
@@ -51,7 +57,7 @@ const groups = [
     { id: 'login', label: '🔐 登录规则', fields: [
       { k: 'session_hours', label: '未勾「记住我」有效期 (小时)', type: 'number' },
       { k: 'remember_days', label: '勾选「记住我」有效期 (天)', type: 'number' },
-      { k: 'random_public', label: '随机图 API 对游客开放', type: 'switch', hint: '开启后未登录也能用外链（会被限流）' },
+      { k: 'random_public', label: '随机图 API 对游客开放', type: 'switch', hint: '同时受站点公开访问、外链总开关与标签外链规则限制；私密图片不对外开放' },
     ] },
     { id: 'users', label: '👥 用户管理', custom: 'users' },
   ]},
@@ -77,6 +83,14 @@ const groups = [
   ]},
 ]
 
+const policyTags = ref([])
+const policyError = ref('')
+const blockedTags = computed(() => { try { return JSON.parse(s.value?.external_disabled_tags || '[]') } catch { return [] } })
+function tagExternal(name, enabled) {
+  const tags = new Set(blockedTags.value)
+  if (enabled) tags.delete(name); else tags.add(name)
+  s.value.external_disabled_tags = JSON.stringify([...tags])
+}
 const active = ref('site')
 const menuOpen = ref(false)
 const s = ref(null)
@@ -392,6 +406,11 @@ onUnmounted(() => {
 
 async function loadPanel(id) {
   if (!s.value) return
+  if (id === 'share') {
+    policyError.value = ''
+    try { policyTags.value = (await getAdminTags(store.token)).tags }
+    catch (e) { policyError.value = errText(e) }
+  }
   if (id === 'compress') await loadSystem()
   if (id === 'users') await loadUsers()
   if (id === 'stats') await loadStats()
@@ -1223,7 +1242,8 @@ const notifyPreview = computed(() => {
           <h3>{{ t('公开接口（游客）') }}</h3>
           <pre>GET /api/public/settings
   → { site_title, site_icon, site_tags, site_footer, random_public,
-      share_base_url, upload_default_tags }
+      share_base_url, upload_default_tags, site_public,
+      external_links_enabled, copyright_notice, copyright_contact }
 
 GET /api/tags
   → { tags: [{ name, count }] }
@@ -1627,6 +1647,7 @@ curl -H "Authorization: Bearer $TOKEN" \
                   <option v-for="o in f.options" :key="o.v || o" :value="o.v || o">{{ t(o.label || o) }}</option>
                 </select>
                 <input v-else-if="f.type === 'number'" :id="'setting-' + f.k" type="number" :min="['session_hours','remember_days','rate_ban_minutes','auth_max_fails','auth_ban_minutes'].includes(f.k) ? 1 : 0" v-model.number="s[f.k]" />
+                <textarea v-else-if="f.type === 'textarea'" :id="'setting-' + f.k" v-model="s[f.k]" rows="4" maxlength="500"></textarea>
                 <input v-else :id="'setting-' + f.k" v-model="s[f.k]" />
                 <span class="hint" v-if="f.hint">{{ t(f.hint) }}</span>
               </div>
@@ -1639,6 +1660,23 @@ curl -H "Authorization: Bearer $TOKEN" \
               </div>
             </template>
           </div>
+          <section v-if="active === 'share'" class="tag-policy-panel">
+            <h3>{{ t('按标签控制外链') }}</h3>
+            <p class="hint muted">{{ t('私密标签始终禁止公开外链，仅管理员可查看。关闭其他标签的外链后，该标签的旧分享地址也会失效。') }}</p>
+            <p v-if="s.site_public !== '1' || s.external_links_enabled !== '1'" class="hint muted">{{ t('当前总开关已关闭，以下规则会在总开关开启后生效。') }}</p>
+            <p v-if="policyError" class="tag-err" role="alert">{{ policyError }}</p>
+            <div class="table-scroll">
+              <table class="user-table">
+                <thead><tr><th>{{ t('标签') }}</th><th>{{ t('图片数') }}</th><th>{{ t('允许外链') }}</th></tr></thead>
+                <tbody><tr v-for="tag in policyTags" :key="tag.name">
+                  <td>{{ tag.name || t('无标签') }} <span v-if="tag.name === '私密'">🔒</span></td>
+                  <td>{{ tag.count }}</td>
+                  <td><label class="check-line"><input type="checkbox" :aria-label="t('允许外链') + ' ' + (tag.name || t('无标签'))" :disabled="tag.name === '私密'" :checked="tag.name !== '私密' && !blockedTags.includes(tag.name)" @change="tagExternal(tag.name, $event.target.checked)" />{{ tag.name === '私密' ? t('仅管理员') : t('允许外链') }}</label></td>
+                </tr></tbody>
+              </table>
+            </div>
+            <p class="hint muted">{{ t('以上开关与标签规则均需点击下方保存后生效。公开画廊中可见的图片仍可被访客保存。') }}</p>
+          </section>
           <p class="hint muted" v-if="currentGroup()?.hint">{{ t(currentGroup().hint) }}</p>
 
           <div class="row form-actions">
