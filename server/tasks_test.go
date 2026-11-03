@@ -59,7 +59,7 @@ func TestInterruptedTasksResumeWithoutConsumingAnExtraRetry(t *testing.T) {
 	taskID := "11111111111111111111111111111111"
 	seedUploadTask(a, taskID, "processing")
 	a.exec("UPDATE upload_sessions SET attempts=4 WHERE id=?", taskID)
-	a.exec("INSERT INTO repair_job VALUES(1,'running',2,?,?)", nowISO(), nowISO())
+	a.exec("INSERT INTO repair_job(id,status,batch_size,started_at,updated_at) VALUES(1,'running',2,?,?)", nowISO(), nowISO())
 	a.exec("INSERT INTO repair_items(image_id,status,attempts) VALUES('photo','processing',4)")
 	dir := a.uploadDir(taskID)
 	must(os.MkdirAll(dir, 0700))
@@ -80,7 +80,7 @@ func TestInterruptedQueueBuildRescansEntireLibrary(t *testing.T) {
 		must(os.WriteFile(filepath.Join(a.data, "uploads", imageID+".png"), []byte("original"), 0600))
 		a.insert("images", M{"id": imageID, "key": imageID + ".png", "mime": "image/png", "size": 8, "width": 1, "height": 1, "created_at": nowISO()})
 	}
-	a.exec("INSERT INTO repair_job VALUES(1,'building',2,?,?)", nowISO(), nowISO())
+	a.exec("INSERT INTO repair_job(id,status,batch_size,started_at,updated_at) VALUES(1,'building',2,?,?)", nowISO(), nowISO())
 	a.exec("INSERT INTO repair_items(image_id,status) VALUES('a','pending')")
 	b := reopenApp(t, a)
 	if !b.repairActive() || b.count("SELECT COUNT(*) FROM repair_items") != 3 {

@@ -32,8 +32,12 @@ func (a *App) itemJSON(r, u M) M {
 		csize = r["c_size"]
 	}
 	shares := M{}
+	original := "/files/" + str(r["key"])
+	if fi, err := os.Stat(pathIn(filepath.Join(a.data, "uploads"), str(r["key"]))); err == nil {
+		original += fmt.Sprintf("?v=%d", fi.ModTime().UnixNano())
+	}
 	if externalAllowed(r, a.settings()) {
-		shares = M{"original": "/files/" + str(r["key"]), "thumb": thumb, "compressed": c}
+		shares = M{"original": original, "thumb": thumb, "compressed": c}
 	}
 	view := func(p any) any {
 		if p == nil {
@@ -41,7 +45,7 @@ func (a *App) itemJSON(r, u M) M {
 		}
 		return "/media" + str(p)
 	}
-	return M{"viewUrl": "/media/files/" + str(r["key"]), "viewThumb": view(thumb), "viewCompressed": view(c), "shareUrls": shares, "private": str(r["tag"]) == privateTag, "id": r["id"], "key": r["key"], "url": "/files/" + str(r["key"]), "thumb": thumb, "compressed": c, "width": r["width"], "height": r["height"], "mimeType": r["mime"], "size": r["size"], "compressedSize": csize, "createdAt": r["created_at"], "tag": str(r["tag"]), "filename": filepath.Base(str(r["key"])), "origName": str(r["orig_name"]), "ownerId": str(r["owner_id"]), "owner": str(r["owner_name"]), "mine": own, "canEdit": edit}
+	return M{"viewUrl": "/media" + original, "viewThumb": view(thumb), "viewCompressed": view(c), "shareUrls": shares, "private": str(r["tag"]) == privateTag, "id": r["id"], "key": r["key"], "url": original, "thumb": thumb, "compressed": c, "width": r["width"], "height": r["height"], "mimeType": r["mime"], "size": r["size"], "compressedSize": csize, "createdAt": r["created_at"], "tag": str(r["tag"]), "filename": filepath.Base(str(r["key"])), "origName": str(r["orig_name"]), "ownerId": str(r["owner_id"]), "owner": str(r["owner_name"]), "mine": own, "canEdit": edit}
 }
 func (a *App) derivativeURL(dir, key string) any {
 	if key == "" {
@@ -205,13 +209,6 @@ func (a *App) process(path, key string, lim M, thumb, compressed bool, clean ...
 	return info, err
 }
 func (a *App) processTo(path string, lim M, thumb, compressed string, sanitized ...string) (M, error) {
-	a.poolMu.Lock()
-	for a.active >= num(lim["concurrency"]) {
-		a.poolCond.Wait()
-	}
-	a.active++
-	a.poolMu.Unlock()
-	defer func() { a.poolMu.Lock(); a.active--; a.poolCond.Broadcast(); a.poolMu.Unlock() }()
 	job := M{"op": "process", "path": path, "limits": lim}
 	if len(sanitized) > 0 && sanitized[0] != "" {
 		job["sanitized"] = sanitized[0]
@@ -222,6 +219,16 @@ func (a *App) processTo(path string, lim M, thumb, compressed string, sanitized 
 	if compressed != "" {
 		job["compressed"] = compressed
 	}
+	return a.processJob(job, lim)
+}
+func (a *App) processJob(job, lim M) (M, error) {
+	a.poolMu.Lock()
+	for a.active >= num(lim["concurrency"]) {
+		a.poolCond.Wait()
+	}
+	a.active++
+	a.poolMu.Unlock()
+	defer func() { a.poolMu.Lock(); a.active--; a.poolCond.Broadcast(); a.poolMu.Unlock() }()
 	info, err := a.work(job)
 	if err != nil {
 		return nil, err

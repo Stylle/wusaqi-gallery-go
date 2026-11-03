@@ -26,6 +26,25 @@ def atomic_save(img, dest, fmt, **kwargs):
 
 def run(job):
     from PIL import Image, ImageOps
+    Image.MAX_IMAGE_PIXELS = None
+    if job.get("op") == "sanitize-existing":
+        result = {}
+        for part in job["files"]:
+            with Image.open(part["path"]) as source:
+                limit = job["limits"]["maxPixels"]
+                if limit and source.width * source.height > limit * 1_000_000:
+                    raise ValueError("图片分辨率超过当前压缩方案上限，请调整后重试")
+                source.load()
+                size = sanitize(source, part["path"], part["out"])
+                with Image.open(part["out"]) as clean:
+                    width, height = clean.size
+                    if clean.getexif().get(274, 1) in (5, 6, 7, 8):
+                        width, height = height, width
+                if part["kind"] == "original":
+                    result.update(original_size=size, width=width, height=height)
+                elif part["kind"] == "compressed":
+                    result.update(c_size=size, c_width=width, c_height=height)
+        return result
     path = job["path"]
     # The application validates pixel counts before decoding, including custom
     # limits above Pillow's default warning threshold.

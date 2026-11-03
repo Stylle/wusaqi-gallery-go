@@ -8,6 +8,12 @@ export const i18n = reactive({
 })
 
 const EN = {
+  '后台图片任务': 'Background image tasks',
+  '清理全部图片个人信息': 'Remove metadata from all images',
+  '个人信息清理': 'Photo metadata cleanup',
+  '开始清理': 'Start cleanup',
+  '个人信息清理队列已启动': 'Photo metadata cleanup queue started',
+
   '新上传图片会自动清除定位、拍摄时间、设备及作者等元数据；清理失败不会入库。画面中的文字、人脸或水印不会自动移除。': 'New uploads automatically remove location, capture time, device and author metadata. Failed cleaning is not published. Visible text, faces and watermarks are retained.',
   '显示私密图片': 'Show private images',
   '此图片未开放外链': 'External sharing is disabled for this image',

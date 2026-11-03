@@ -30,8 +30,8 @@ func (a *App) writing(fn func()) { a.writeMu.Lock(); defer a.writeMu.Unlock(); f
 func (a *App) recoverWork() {
 	a.exec("UPDATE repair_items SET status='pending',attempts=MAX(attempts-1,0) WHERE status='processing'")
 	a.exec("UPDATE upload_sessions SET status='queued',attempts=MAX(attempts-1,0) WHERE status='processing'")
-	if job := a.one("SELECT batch_size FROM repair_job WHERE status='building'"); job != nil {
-		a.buildRepair(num(job["batch_size"]))
+	if job := a.one("SELECT batch_size,mode FROM repair_job WHERE status='building'"); job != nil {
+		a.buildRepair(num(job["batch_size"]), str(job["mode"]))
 	}
 	// Incomplete payloads are deliberately outside the import/backup directories.
 	a.expireUploads()
@@ -89,7 +89,11 @@ func (a *App) workLoop() {
 				if row == nil {
 					break
 				}
-				a.runRepair(row)
+				if job["mode"] == "metadata" {
+					a.runMetadata(row)
+				} else {
+					a.runRepair(row)
+				}
 				if a.count("SELECT COUNT(*) FROM upload_sessions WHERE status='queued' AND next_attempt<=?", time.Now().Unix()) > 0 {
 					break
 				}
@@ -105,7 +109,7 @@ func (a *App) workLoop() {
 func (a *App) repairStatus() M {
 	job := a.one("SELECT * FROM repair_job WHERE id=1")
 	if job == nil {
-		job = M{"status": "idle", "batch_size": 5}
+		job = M{"status": "idle", "batch_size": 5, "mode": "repair"}
 	}
 	counts := M{"total": a.count("SELECT COUNT(*) FROM repair_items"), "pending": 0, "processing": 0, "done": 0, "failed": 0, "skipped": 0, "retried": 0}
 	for _, r := range a.rows("SELECT status,COUNT(*) AS n FROM repair_items GROUP BY status") {
@@ -138,7 +142,17 @@ func (a *App) repairRoute(w http.ResponseWriter, r *http.Request) {
 		if size < 1 || size > 50 {
 			fail(400, "每批张数应为 1–50")
 		}
-		a.buildRepair(size)
+		mode := str(v["mode"])
+		if mode == "" {
+			mode = "repair"
+		}
+		if mode != "repair" && mode != "metadata" {
+			fail(400, "invalid task mode")
+		}
+		if a.count("SELECT COUNT(*) FROM repair_items WHERE status='pending'") > 0 && a.count("SELECT COUNT(*) FROM repair_job WHERE status='paused'") > 0 {
+			fail(409, "请先继续并完成已有的暂停队列")
+		}
+		a.buildRepair(size, mode)
 	case "/api/admin/local/repair/pause":
 		a.exec("UPDATE repair_job SET status='paused',updated_at=? WHERE id=1 AND status='running'", nowISO())
 	case "/api/admin/local/repair/resume", "/api/admin/local/repair/retry-failed":
@@ -167,10 +181,14 @@ func (a *App) repairRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	respond(w, a.repairStatus())
 }
-func (a *App) buildRepair(size int64) {
+func (a *App) buildRepair(size int64, modes ...string) {
+	mode := "repair"
+	if len(modes) > 0 && modes[0] == "metadata" {
+		mode = "metadata"
+	}
 	// A crash while scanning leaves 'building'; startup restarts the scan instead
 	// of silently treating a partially populated queue as the whole library.
-	a.exec("INSERT INTO repair_job(id,status,batch_size,started_at,updated_at) VALUES(1,'building',?,?,?) ON CONFLICT(id) DO UPDATE SET status='building',batch_size=excluded.batch_size,started_at=excluded.started_at,updated_at=excluded.updated_at", size, nowISO(), nowISO())
+	a.exec("INSERT INTO repair_job(id,status,batch_size,started_at,updated_at,mode) VALUES(1,'building',?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='building',batch_size=excluded.batch_size,started_at=excluded.started_at,updated_at=excluded.updated_at,mode=excluded.mode", size, nowISO(), nowISO(), mode)
 	a.exec("DELETE FROM repair_items")
 	after := ""
 	for {
@@ -180,7 +198,7 @@ func (a *App) buildRepair(size int64) {
 		}
 		for _, im := range rows {
 			after = str(im["id"])
-			if c, t := a.missingVariants(im); c || t {
+			if c, t := a.missingVariants(im); mode == "metadata" || c || t {
 				a.exec("INSERT INTO repair_items(image_id,status) VALUES(?,'pending')", im["id"])
 			}
 		}
@@ -262,6 +280,10 @@ func (a *App) runRepair(task M) {
 			a.writeMu.Unlock()
 		}
 	}
+	a.repairError(task, err)
+}
+func (a *App) repairError(task M, err error) {
+	imageID := task["image_id"]
 	if err != nil {
 		a.writeMu.Lock()
 		defer a.writeMu.Unlock()
@@ -277,6 +299,7 @@ func (a *App) runRepair(task M) {
 		a.exec("UPDATE repair_items SET status=?,next_attempt=?,error=? WHERE image_id=?", status, time.Now().Unix()+(1<<min(attempts-1, 3)), truncate(err.Error(), 300), imageID)
 	}
 }
+
 func outputExt(lim M) string {
 	return map[string]string{"webp": "webp", "jpeg": "jpg", "png": "png"}[str(lim["format"])]
 }

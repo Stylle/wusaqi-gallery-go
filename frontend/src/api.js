@@ -80,10 +80,10 @@ export async function uploadSessionRequest(token, method, path, value, headers =
     }).then(json)
   } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort) }
 }
-export const repairQueue = (token, action = '', batchSize = 5) =>
+export const repairQueue = (token, action = '', batchSize = 5, mode = 'repair') =>
   fetch('/api/admin/local/repair' + (action && action !== 'start' ? '/' + action : ''), {
     method: action ? 'POST' : 'GET', headers: { ...auth(token), 'Content-Type': 'application/json' },
-    ...(['start', 'resume', 'retry-failed'].includes(action) ? { body: JSON.stringify({ batchSize }) } : {}),
+    ...(['start', 'resume', 'retry-failed'].includes(action) ? { body: JSON.stringify({ batchSize, mode }) } : {}),
   }).then(json)
 
 export const patchImage = (token, id, payload) =>

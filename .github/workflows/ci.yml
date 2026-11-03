@@ -54,6 +54,7 @@ jobs:
           python qa/reliability.py
           python qa/privacy.py
           python qa/metadata.py
+          python qa/metadata-cleanup.py
           python qa/check-compose.py
       - name: Check README synchronization
         shell: bash
@@ -81,3 +82,4 @@ jobs:
           python qa/reliability.py
           python qa/privacy.py
           python qa/metadata.py
+          python qa/metadata-cleanup.py
