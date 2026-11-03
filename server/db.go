@@ -208,7 +208,7 @@ func (a *App) insert(table string, fields M) {
 }
 func (a *App) initDB(syncAdmin bool) {
 	a.exec(schema)
-	for table, cols := range map[string]map[string]string{"images": {"owner_id": "TEXT", "tag": "TEXT", "orig_name": "TEXT"}, "users": {"daily_limit": "INTEGER NOT NULL DEFAULT 0", "weekly_limit": "INTEGER NOT NULL DEFAULT 0", "monthly_limit": "INTEGER NOT NULL DEFAULT 0"}} {
+	for table, cols := range map[string]map[string]string{"repair_job": {"mode": "TEXT NOT NULL DEFAULT 'repair'"}, "images": {"owner_id": "TEXT", "tag": "TEXT", "orig_name": "TEXT"}, "users": {"daily_limit": "INTEGER NOT NULL DEFAULT 0", "weekly_limit": "INTEGER NOT NULL DEFAULT 0", "monthly_limit": "INTEGER NOT NULL DEFAULT 0"}} {
 		existing := map[string]bool{}
 		for _, r := range a.rows("PRAGMA table_info(" + table + ")") {
 			existing[str(r["name"])] = true

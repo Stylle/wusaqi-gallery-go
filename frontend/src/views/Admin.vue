@@ -145,6 +145,7 @@ const compLimit = ref(5)
 const compInfo = ref(null)
 const compMsg = ref('')
 const compBusy = ref(false)
+const metadataDialog = ref(null)
 const repair = ref(null)
 const repairRunning = computed(() => repair.value?.job.status === 'running')
 let repairTimer = null
@@ -313,12 +314,13 @@ async function previewCompress() {
   }
 }
 
-async function runCompress() {
+async function runCompress(mode = 'repair') {
+  metadataDialog.value?.close()
   if (!Number.isInteger(compLimit.value) || compLimit.value < 1 || compLimit.value > 50) { compMsg.value = t('每批张数应为 1–50'); return }
   compBusy.value = true
   try {
-    repair.value = await repairQueue(store.token, 'start', compLimit.value)
-    compMsg.value = t('补齐队列已启动，后续批次会自动继续')
+    repair.value = await repairQueue(store.token, 'start', compLimit.value, mode)
+    compMsg.value = mode === 'metadata' ? t('个人信息清理队列已启动') : t('补齐队列已启动，后续批次会自动继续')
     watchRepair()
   } catch (e) {
     compMsg.value = t('失败：') + e.message
@@ -1192,7 +1194,7 @@ const notifyPreview = computed(() => {
           </div>
 
           <div class="panel">
-            <h3 style="font-size:14px">{{ t('补齐压缩版') }}</h3>
+            <h3 style="font-size:14px">{{ t('后台图片任务') }}</h3>
             <p class="muted" style="margin-top:0">
               {{ compMsg || t('尚未检查') }}
               <template v-if="compInfo?.settings">
@@ -1208,9 +1210,10 @@ const notifyPreview = computed(() => {
                 <input v-model.number="compLimit" :disabled="repairRunning || compBusy" type="number" min="1" max="50"
                   style="width:76px" /> {{ t('张') }}
               </label>
-              <button :disabled="compBusy || localBusy || repairRunning || repair?.counts.processing || !compInfo?.todoCount" @click="runCompress">
+              <button :disabled="compBusy || localBusy || repairRunning || repair?.counts.processing || !compInfo?.todoCount" @click="runCompress('repair')">
                 {{ t('一键补齐全部') }} ({{ compInfo?.todoCount || 0 }})
               </button>
+              <button class="ghost" :disabled="compBusy || localBusy || repairRunning || repair?.counts.processing || (repair?.job.status === 'paused' && repair?.counts.pending)" @click="metadataDialog.showModal()">{{ t('清理全部图片个人信息') }}</button>
               <button v-if="repairRunning" class="ghost" :disabled="compBusy" @click="controlRepair('pause')">{{ t('暂停队列') }}</button>
               <button v-if="repair?.job.status === 'paused'" class="ghost" :disabled="compBusy || localBusy" @click="controlRepair('resume')">{{ t('继续队列') }}</button>
               <button v-if="repair?.counts.failed && !repairRunning" class="ghost" :disabled="compBusy || localBusy || repair.counts.processing" @click="controlRepair('retry-failed')">{{ t('重试失败项') }}</button>
@@ -1218,8 +1221,9 @@ const notifyPreview = computed(() => {
             <p class="hint muted">
               {{ t('每批处理完成后自动继续下一批，无需反复点击。逐张压缩以控制内存；失败最多自动重试三次。队列保存在数据库，关闭页面不影响执行，服务重启后会继续；暂停会等待当前图片结束。') }}
             </p>
+            <p class="hint muted">{{ t('清理功能处理所有已入库原图及现有生成图，保留链接、标签和归属；缺失版本可使用补齐功能。失败项保留原文件，可能仍含个人信息，请查看明细；敏感图片可先设为私密。') }}</p>
             <div v-if="repair?.counts.total" role="status" aria-live="polite">
-              <p>{{ t('队列状态') }}: {{ t(({ running: '运行中', paused: '已暂停', completed: '已完成' })[repair.job.status] || repair.job.status) }} · {{ t('总计') }} {{ repair.counts.total }} · {{ t('成功') }} {{ repair.counts.done }} · {{ t('待处理') }} {{ repair.counts.pending }} · {{ t('处理中…') }} {{ repair.counts.processing }} · {{ t('失败') }} {{ repair.counts.failed }} · {{ t('跳过') }} {{ repair.counts.skipped }} · {{ t('自动重试') }} {{ repair.counts.retried }}</p>
+              <p><strong>{{ repair.job.mode === 'metadata' ? t('个人信息清理') : t('补齐压缩版') }}</strong> · {{ t('队列状态') }}: {{ t(({ running: '运行中', paused: '已暂停', completed: '已完成' })[repair.job.status] || repair.job.status) }} · {{ t('总计') }} {{ repair.counts.total }} · {{ t('成功') }} {{ repair.counts.done }} · {{ t('待处理') }} {{ repair.counts.pending }} · {{ t('处理中…') }} {{ repair.counts.processing }} · {{ t('失败') }} {{ repair.counts.failed }} · {{ t('跳过') }} {{ repair.counts.skipped }} · {{ t('自动重试') }} {{ repair.counts.retried }}</p>
               <div class="bar"><div :style="{ width: ((repair.counts.done + repair.counts.failed + repair.counts.skipped) / repair.counts.total * 100) + '%' }"></div></div>
               <details v-if="repair.failures.length"><summary>{{ t('查看失败明细') }}</summary><p v-for="f in repair.failures" :key="f.image_id" class="mono index-detail">{{ f.image_id }} · {{ t('处理尝试') }} {{ f.attempts }}/4 · {{ f.error }}</p></details>
             </div>
@@ -1330,7 +1334,7 @@ GET  /api/admin/local/status            {{ t('导入进度轮询') }}
 POST /api/admin/local/import/cancel     {{ t('取消进行中的导入') }}
 POST /api/admin/local/compress?dry_run=true&amp;limit=5
 GET  /api/admin/local/repair             # Durable queue status
-POST /api/admin/local/repair             # { "batchSize": 5 }, all missing assets
+POST /api/admin/local/repair             # { "batchSize": 5, "mode": "repair" | "metadata" }
 POST /api/admin/local/repair/pause
 POST /api/admin/local/repair/resume
 POST /api/admin/local/repair/retry-failed # Reset exhausted items explicitly
@@ -1691,6 +1695,11 @@ curl -H "Authorization: Bearer $TOKEN" \
   </template>
 
   <!-- 全局操作提示：保存/测试等动作的即时反馈 -->
+  <dialog ref="metadataDialog" class="modal maintenance-dialog" aria-labelledby="metadata-confirm-title">
+    <h3 id="metadata-confirm-title">{{ t('清理全部图片个人信息') }}</h3>
+    <p>{{ t('将分批清除已入库原图、缩略图和压缩图中的定位、设备、作者等来源信息，链接、标签与归属保持不变。元数据清除后无法还原，请先备份需要保留的原文件。') }}</p>
+    <div class="row"><button class="ghost" autofocus @click="metadataDialog.close()">{{ t('取消') }}</button><button :disabled="compBusy" @click="runCompress('metadata')">{{ t('开始清理') }}</button></div>
+  </dialog>
   <dialog ref="indexDialog" class="modal maintenance-dialog" aria-labelledby="index-confirm-title">
     <h3 id="index-confirm-title">{{ t(indexConfirm ? '清空缩略图与压缩图' : '重建索引') }}</h3>
     <p>{{ indexConfirm ? t('清空全部缩略图和压缩图？原图、标签和归属保留，之后可使用补齐功能重新生成。') : t('重建索引会移除原图已不存在的记录及其衍生文件，并修正失效的压缩图引用。继续？') }}</p>

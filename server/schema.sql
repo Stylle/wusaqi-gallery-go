@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS ip_geo (
 -- Durable work queues. Payloads stay on disk, never in SQLite or Go memory.
 CREATE TABLE IF NOT EXISTS repair_job (
     id INTEGER PRIMARY KEY CHECK(id=1), status TEXT NOT NULL,
+    mode TEXT NOT NULL DEFAULT 'repair',
     batch_size INTEGER NOT NULL, started_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS repair_items (

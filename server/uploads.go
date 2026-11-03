@@ -437,6 +437,9 @@ func (a *App) expireUploads() {
 	entries, _ := os.ReadDir(a.data)
 	for _, entry := range entries {
 		if entry.IsDir() && strings.HasPrefix(entry.Name(), ".repair-") {
+			if _, e := os.Stat(filepath.Join(a.data, entry.Name(), ".keep")); e == nil {
+				continue
+			}
 			_ = os.RemoveAll(filepath.Join(a.data, entry.Name()))
 		}
 	}

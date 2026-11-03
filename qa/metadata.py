@@ -125,6 +125,8 @@ def suite(data):
                     inspect(version)
                     qa.check(name+' '+mode+' '+key+' removes metadata',status==200 and MARKER not in version)
         (data/'uploads'/'local-metadata.png').write_bytes(photo('PNG'))
+        hidden=data/'uploads'/'.avif-clean-interrupted'
+        hidden.mkdir();(hidden/'0.png').write_bytes(photo('PNG'))
         call('POST','/api/admin/local/import',token=token)
         deadline=time.monotonic()+60
         while time.monotonic()<deadline:
@@ -134,7 +136,7 @@ def suite(data):
         local=next(x for x in call('GET','/api/images?limit=100',token=token)[1]['items'] if x['key']=='local-metadata.png')
         clean=call('GET',local['url'],raw=True)[1]
         inspect(clean)
-        qa.check('new local imports also clean metadata before indexing',MARKER not in clean and local['size']==len(clean))
+        qa.check('new local imports also clean metadata before indexing',MARKER not in clean and local['size']==len(clean) and job['imported']==1)
         count=call('GET','/api/images')[1]['total']
         unsafe=io.BytesIO();Image.new('RGB',(10,10)).save(unsafe,'TIFF')
         b,h=qa.multipart([('files','unsupported.jpg',unsafe.getvalue())])

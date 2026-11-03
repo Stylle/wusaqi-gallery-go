@@ -62,6 +62,7 @@ python qa/features.py
 python qa/reliability.py
 python qa/privacy.py
 python qa/metadata.py
+python qa/metadata-cleanup.py
 python qa/check-compose.py
 python qa/memory-benchmark.py
 python scripts/sync-docs.py
