@@ -20,6 +20,9 @@ func (a *App) image(i any) M {
 	return a.one("SELECT i.*,u.username AS owner_name FROM images i LEFT JOIN users u ON u.id=i.owner_id WHERE i.id=?", i)
 }
 func (a *App) itemJSON(r, u M) M {
+	if !canViewImage(r, u) {
+		return nil
+	}
 	own := u != nil && r["owner_id"] == u["id"]
 	edit := u != nil && (u["role"] == "admin" || own)
 	c := a.derivativeURL("compressed", str(r["c_key"]))
@@ -28,7 +31,17 @@ func (a *App) itemJSON(r, u M) M {
 	if c != nil {
 		csize = r["c_size"]
 	}
-	return M{"id": r["id"], "key": r["key"], "url": "/files/" + str(r["key"]), "thumb": thumb, "compressed": c, "width": r["width"], "height": r["height"], "mimeType": r["mime"], "size": r["size"], "compressedSize": csize, "createdAt": r["created_at"], "tag": str(r["tag"]), "filename": filepath.Base(str(r["key"])), "origName": str(r["orig_name"]), "ownerId": str(r["owner_id"]), "owner": str(r["owner_name"]), "mine": own, "canEdit": edit}
+	shares := M{}
+	if externalAllowed(r, a.settings()) {
+		shares = M{"original": "/files/" + str(r["key"]), "thumb": thumb, "compressed": c}
+	}
+	view := func(p any) any {
+		if p == nil {
+			return nil
+		}
+		return "/media" + str(p)
+	}
+	return M{"viewUrl": "/media/files/" + str(r["key"]), "viewThumb": view(thumb), "viewCompressed": view(c), "shareUrls": shares, "private": str(r["tag"]) == privateTag, "id": r["id"], "key": r["key"], "url": "/files/" + str(r["key"]), "thumb": thumb, "compressed": c, "width": r["width"], "height": r["height"], "mimeType": r["mime"], "size": r["size"], "compressedSize": csize, "createdAt": r["created_at"], "tag": str(r["tag"]), "filename": filepath.Base(str(r["key"])), "origName": str(r["orig_name"]), "ownerId": str(r["owner_id"]), "owner": str(r["owner_name"]), "mine": own, "canEdit": edit}
 }
 func (a *App) derivativeURL(dir, key string) any {
 	if key == "" {
@@ -45,7 +58,9 @@ func (a *App) images(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	page, limit := max(1, queryNum(r, "page", 1)), clamp(queryNum(r, "limit", 36), 1, 100)
 	u := a.user(r)
-	where := []string{"1=1"}
+	a.setMediaCookie(w, r)
+	a.setViewerCookie(w, r, a.settings())
+	where := []string{privateFilter(r, u)}
 	args := []any{}
 	if tag := strings.TrimSpace(q.Get("tag")); tag != "" {
 		where = append(where, "i.tag=?")
@@ -93,22 +108,38 @@ func (a *App) images(w http.ResponseWriter, r *http.Request) {
 	respond(w, M{"items": items, "page": page, "limit": limit, "total": total, "hasMore": more, "nextCursor": next})
 }
 func (a *App) random(w http.ResponseWriter, r *http.Request) {
-	if a.settings()["random_public"] != "1" {
+	s := a.settings()
+	u := a.user(r)
+	if s["random_public"] != "1" && u == nil {
 		a.require(r, false)
 	}
-	query, args := "SELECT * FROM images", []any{}
+	where, args := []string{privateFilter(r, u)}, []any{}
+	if u == nil {
+		if s["external_links_enabled"] != "1" {
+			fail(403, "随机图公开外链已关闭")
+		}
+		for _, tag := range disabledTags(s) {
+			where = append(where, "COALESCE(i.tag,'')!=?")
+			args = append(args, tag)
+		}
+	}
 	if tag := strings.TrimSpace(r.URL.Query().Get("tag")); tag != "" {
-		query += " WHERE tag=?"
+		where = append(where, "i.tag=?")
 		args = append(args, tag)
 	}
-	row := a.one(query+" ORDER BY RANDOM() LIMIT 1", args...)
+	row := a.one("SELECT i.* FROM images i WHERE "+strings.Join(where, " AND ")+" ORDER BY RANDOM() LIMIT 1", args...)
 	if row == nil {
 		fail(404, "no images")
 	}
-	item := a.itemJSON(row, nil)
+	item := a.itemJSON(row, u)
+	a.setMediaCookie(w, r)
+	a.setViewerCookie(w, r, s)
 	p := str(item["url"])
 	if r.URL.Query().Get("variant") != "original" && item["compressed"] != nil {
 		p = str(item["compressed"])
+	}
+	if u != nil {
+		p = "/media" + p
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	if r.URL.Path == "/api/random/image" || truth(r.URL.Query().Get("redirect")) {
@@ -222,6 +253,7 @@ func (a *App) checkUpload(u M, size int64) {
 	}
 }
 func (a *App) registerFile(path, key, filename string, u M, tag string, local bool) M {
+	tag = cleanTag(tag, u)
 	fi, e := os.Stat(path)
 	must(e)
 	if !local {
@@ -338,7 +370,7 @@ func (a *App) imageRoute(w http.ResponseWriter, r *http.Request) {
 	u := a.require(r, false)
 	uid := strings.TrimPrefix(r.URL.Path, "/api/images/")
 	im := a.image(uid)
-	if im == nil {
+	if !canViewImage(im, u) {
 		fail(404, "图片不存在")
 	}
 	if u["role"] != "admin" && im["owner_id"] != u["id"] {
@@ -364,7 +396,7 @@ func (a *App) imageRoute(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	if tag, ok := v["tag"]; ok {
-		fields["tag"] = truncate(strings.TrimSpace(str(tag)), 40)
+		fields["tag"] = cleanTag(tag, u)
 	}
 	if name := str(v["filename"]); name != "" {
 		stem := safeStem(name)

@@ -1,4 +1,5 @@
 <script setup>
+import { shareUrl } from '../media.js'
 import { ref, onUnmounted } from 'vue'
 import { getRandom, getTags, copyText, randomImageUrl } from '../api.js'
 import { absUrl, site } from '../site.js'
@@ -8,7 +9,7 @@ import { t } from '../i18n.js'
 const variant = ref('compressed')
 const tag = ref('')
 const tags = ref([])
-getTags().then(d => { tags.value = d.tags || [] }).catch(() => {})
+getTags(store.token).then(d => { tags.value = d.tags || [] }).catch(() => {})
 const item = ref(null)
 const loading = ref(false)
 const error = ref('')
@@ -33,7 +34,9 @@ function src(it) {
 }
 async function copy(v) {
   try {
-    await copyText(absUrl(v === 'original' ? item.value.url : (item.value.compressed || item.value.url)))
+    const path = shareUrl(item.value, v) || (v === 'compressed' ? shareUrl(item.value, 'original') : '')
+    if (!path) { copyMessage.value = t('此图片未开放外链'); return }
+    await copyText(absUrl(path))
     copyMessage.value = t('已复制链接')
   } catch (e) { copyMessage.value = e.message }
 }
@@ -56,13 +59,13 @@ onUnmounted(() => { requestVersion++ })
 
     <div class="actions" v-if="item">
       <button @click="next">{{ t('再来一张') }}</button>
-      <button class="ghost" @click="copy(variant)">{{ t('复制当前图 URL') }}</button>
-      <button class="ghost" @click="copy('original')">{{ t('复制原图 URL') }}</button>
+      <button class="ghost" :disabled="!shareUrl(item, 'original')" @click="copy(variant)">{{ t('复制当前图 URL') }}</button>
+      <button class="ghost" :disabled="!shareUrl(item, 'original')" @click="copy('original')">{{ t('复制原图 URL') }}</button>
       <a :href="src(item)" target="_blank" rel="noopener noreferrer" class="link-button">{{ t('新窗口打开') }}</a>
     </div>
     <p class="muted mono" v-if="item">
       {{ t('直链：') }}<code>{{ randomImageUrl('compressed', tag) }}</code> / <code>{{ randomImageUrl('original', tag) }}</code>
-      <span v-if="site.random_public !== '1'">{{ t('（当前仅登录可用，后台可开放）') }}</span>
+      <span v-if="site.random_public !== '1' || site.site_public !== '1' || site.external_links_enabled !== '1'">{{ t('（当前仅登录可用，后台可开放）') }}</span>
     </p>
     <p v-if="copyMessage" class="muted" role="status">{{ copyMessage }}</p>
   </div>

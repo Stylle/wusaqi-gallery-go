@@ -67,12 +67,17 @@ func (a *App) authRoute(w http.ResponseWriter, r *http.Request) {
 		if u["role"] == "admin" {
 			a.fire("admin_login", "", M{"ip": ip, "username": u["username"], "role": u["role"], "ua": r.UserAgent()})
 		}
+		r.Header.Set("Authorization", "Bearer "+token)
+		a.setMediaCookie(w, r)
 		respond(w, M{"token": token, "remember": remember, "expiresAt": exp, "user": a.publicUser(u)})
 	case p == "/api/auth/logout" && r.Method == "POST":
+		http.SetCookie(w, &http.Cookie{Name: mediaCookie, Path: "/media/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 		a.exec("DELETE FROM sessions WHERE token=?", strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")))
 		respond(w, M{"ok": true})
 	case p == "/api/auth/me" && r.Method == "GET":
-		respond(w, a.publicUser(a.require(r, false)))
+		u := a.require(r, false)
+		a.setMediaCookie(w, r)
+		respond(w, a.publicUser(u))
 	case p == "/api/auth/password" && r.Method == "POST":
 		u := a.require(r, false)
 		v := body(r)

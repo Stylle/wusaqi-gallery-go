@@ -1188,3 +1188,7 @@ button.danger { color: var(--err); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+.copyright-notice, .copyright-contact { max-width: 850px; margin: 8px auto 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+.tag-policy-panel { margin-top: 24px; }
+.tag-policy-panel .check-line { white-space: nowrap; }

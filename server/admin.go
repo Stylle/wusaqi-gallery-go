@@ -101,7 +101,7 @@ func (a *App) system() M {
 }
 func (a *App) saveSettings(v M) {
 	clean := map[string]string{}
-	switches := ",random_public,notify_admin_login,notify_security,notify_ban,notify_restore,notify_daily,notify_weekly,notify_monthly,"
+	switches := ",site_public,external_links_enabled,random_public,notify_admin_login,notify_security,notify_ban,notify_restore,notify_daily,notify_weekly,notify_monthly,"
 	ranges := map[string][2]int64{"comp_quality": {1, 100}, "comp_method": {0, 6}, "comp_max_width": {0, 12000}, "comp_max_pixels": {0, 500}, "comp_concurrency": {0, 8}, "upload_max_mb": {0, 200}, "new_user_quota_mb": {0, 1e9}, "new_user_max_upload_mb": {0, 200}, "new_user_daily": {0, 1e9}, "new_user_weekly": {0, 1e9}, "new_user_monthly": {0, 1e9}, "rate_limit": {0, 100000}, "rate_ban_minutes": {1, 5256000}, "auth_max_fails": {1, 100000}, "auth_ban_minutes": {1, 5256000}, "session_hours": {1, 87600}, "remember_days": {1, 3650}}
 	choices := map[string]string{"comp_profile": ",auto,tiny,small,normal,custom,", "comp_format": ",webp,jpeg,png,", "theme_style": ",gradient,solid,", "notify_method": ",POST,PUT,GET,", "notify_body_type": ",json,text,"}
 	for k, x := range v {
@@ -131,6 +131,24 @@ func (a *App) saveSettings(v M) {
 			if !valid {
 				fail(400, "invalid "+k)
 			}
+		} else if k == "external_disabled_tags" {
+			var tags []string
+			if json.Unmarshal([]byte(s), &tags) != nil || tags == nil || len(tags) > 500 {
+				fail(400, "标签外链规则必须是最多 500 项的数组")
+			}
+			unique, seen := []string{}, map[string]bool{}
+			for _, tag := range tags {
+				if len([]rune(tag)) > 40 || strings.TrimSpace(tag) != tag {
+					fail(400, "标签外链规则包含无效标签")
+				}
+				if !seen[tag] {
+					unique = append(unique, tag)
+					seen[tag] = true
+				}
+			}
+			encoded, err := json.Marshal(unique)
+			must(err)
+			s = string(encoded)
 		} else if k == "notify_daily_time" {
 			if _, e := time.Parse("15:04", s); e != nil {
 				fail(400, "invalid notify_daily_time")
@@ -176,6 +194,8 @@ func (a *App) adminRoute(w http.ResponseWriter, r *http.Request) {
 	case p == "/api/admin/settings" && m == "PUT":
 		a.saveSettings(body(r))
 		respond(w, a.adminSettings())
+	case p == "/api/admin/tags" && m == "GET":
+		a.adminTags(w)
 	case p == "/api/admin/system" && m == "GET":
 		respond(w, a.system())
 	case strings.HasPrefix(p, "/api/admin/local/"):

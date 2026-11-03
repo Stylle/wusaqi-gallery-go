@@ -8,6 +8,22 @@ export const i18n = reactive({
 })
 
 const EN = {
+  '显示私密图片': 'Show private images',
+  '此图片未开放外链': 'External sharing is disabled for this image',
+  '站点未开放公开访问，请先登录': 'This site requires you to sign in',
+  '上传、后台及受限功能需要登录。': 'Sign in to upload, manage the site, or use restricted features.',
+  '🔗 公开访问与外链': '🔗 Public access & sharing',
+  '允许站点公开访问': 'Allow public site access',
+  '允许图片外链': 'Allow external image links',
+  '按标签控制外链': 'External links by tag',
+  '允许外链': 'Allow external links',
+  '仅管理员': 'Administrators only',
+  '无标签': 'Untagged',
+  '图片数': 'Images',
+  '© 版权与联系': '© Copyright & contact',
+  '版权与违规说明': 'Copyright & abuse notice',
+  '联系方式': 'Contact',
+
   '正在验证登录…': 'Checking your session…',
   '有未保存的修改': 'You have unsaved changes',
   '请先保存通知设置再发送测试': 'Save notification settings before sending a test',

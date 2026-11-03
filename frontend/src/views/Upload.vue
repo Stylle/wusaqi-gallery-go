@@ -1,7 +1,8 @@
 <script setup>
 import { ref, reactive, onMounted, onUnmounted, computed, watch } from 'vue'
 import { uploadSessionRequest, getTags, copyText, fmtSize } from '../api.js'
-import { store, ensureAuth, refreshMe } from '../auth.js'
+import { shareUrl } from '../media.js'
+import { store, isAdmin, ensureAuth, refreshMe } from '../auth.js'
 import { fileChecksum, pendingClientId, forgetPending, transferFile, monitorUpload } from '../upload-flow.js'
 import { absUrl, defaultUploadTags, site } from '../site.js'
 import { t } from '../i18n.js'
@@ -18,6 +19,7 @@ const tags = ref([])
 const tagOptions = computed(() => [...new Set([
   ...(site.site_tags || '').split(',').map(x => x.trim()).filter(Boolean),
   ...tags.value,
+  ...(isAdmin.value ? ['私密'] : []),
 ])])
 const tag = ref('')
 const customTag = ref('')
@@ -56,7 +58,7 @@ const activeTag = computed(() => (customTag.value.trim() || tag.value || ''))
 
 async function loadTags() {
   try {
-    const d = await getTags()
+    const d = await getTags(store.token, isAdmin.value)
     tags.value = (d.tags || []).map(x => x.name)
     const def = defaultUploadTags()
     tag.value = def[0] || ''
@@ -214,8 +216,8 @@ function onPaste(e) {
 }
 
 async function copyItem(it, which) {
-  const path = which === 'thumb' ? it.thumb : (which === 'original' ? it.url : it.compressed)
-  if (!path) { msg.value = t('该图没有这个版本'); return }
+  const path = shareUrl(it, which)
+  if (!path) { msg.value = t('此图片未开放外链'); return }
   try { await copyText(absUrl(path)); msg.value = t('已复制链接') }
   catch (e) { msg.value = e.message }
   setTimeout(() => { msg.value = '' }, 1500)

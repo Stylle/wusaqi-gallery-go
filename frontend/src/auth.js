@@ -20,6 +20,7 @@ store.token = localStorage.getItem('lg_token') || sessionStorage.getItem('lg_tok
 export const ui = reactive({
   activeTag: '',
   onlyMine: false,
+  showPrivate: false,
   viewSize: localStorage.getItem('lg_size') || 'm',
 })
 
@@ -53,6 +54,8 @@ export function clearToken() {
   store.token = ''
   store.user = null
   store.ok = false
+  ui.showPrivate = false
+  ui.activeTag = ''
   authPromise = null
 }
 

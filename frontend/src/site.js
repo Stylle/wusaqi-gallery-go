@@ -7,6 +7,10 @@ export const site = reactive({
   site_tags: '',
   site_footer: '',
   random_public: '0',
+  site_public: '1',
+  external_links_enabled: '1',
+  copyright_notice: '',
+  copyright_contact: '',
   share_base_url: '',
   upload_default_tags: '',
   upload_max_mb: '',     // 全局单图上限（MB），后端算好下发

@@ -34,7 +34,7 @@ func (a *App) batchImages(w http.ResponseWriter, r *http.Request) {
 		}
 		seen[id] = true
 		im := a.image(id)
-		if im == nil {
+		if !canViewImage(im, u) {
 			fail(404, "图片不存在，请刷新列表")
 		}
 		if !download && u["role"] != "admin" && im["owner_id"] != u["id"] {
@@ -51,7 +51,7 @@ func (a *App) batchImages(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			fail(400, "tag is required")
 		}
-		args, marks := []any{truncate(strings.TrimSpace(tag), 40)}, []string{}
+		args, marks := []any{cleanTag(tag, u)}, []string{}
 		for _, im := range rows {
 			args = append(args, im["id"])
 			marks = append(marks, "?")
