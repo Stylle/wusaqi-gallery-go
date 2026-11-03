@@ -18,5 +18,5 @@ if len(text.encode("utf-8")) > 24000:
                   text, flags=re.MULTILINE | re.DOTALL)
 if len(text.encode("utf-8")) > 25000:
     raise SystemExit("Docker Hub overview exceeds its 25,000-byte limit")
-(root / "docs/dockerhub-description.md").write_text(text, encoding="utf-8")
+(root / "docs/dockerhub-description.md").write_text(text, encoding="utf-8", newline="\n")
 print("Updated docs/dockerhub-description.md")
