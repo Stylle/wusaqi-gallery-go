@@ -9,6 +9,8 @@ import os
 import sys
 import tempfile
 
+from image_metadata import sanitize
+
 
 def atomic_save(img, dest, fmt, **kwargs):
     """Never leave a half-written image at a path the gallery can serve."""
@@ -40,14 +42,22 @@ def run(job):
         if lim["maxPixels"] and width * height > lim["maxPixels"] * 1_000_000:
             raise ValueError(f"图片分辨率 {width}×{height} 超过当前压缩方案上限 {lim['maxPixels']} MP")
         img = ImageOps.exif_transpose(src)
-        # Original image metadata stays unchanged for URL/database compatibility.
+        if job.get("sanitized"):
+            info["original_size"] = sanitize(src, path, job["sanitized"])
+        info.update(width=img.width, height=img.height)
+        # Never let a decoder's metadata dictionary travel into a derivative.
+        transparency = img.info.get("transparency")
+        img.getexif().clear()
+        img.info.clear()
+        if transparency is not None:
+            img.info["transparency"] = transparency
         thumb = job.get("thumb")
         if thumb and not os.path.exists(thumb):
             os.makedirs(os.path.dirname(thumb), exist_ok=True)
             small = img.copy()
             small.thumbnail((600, 4800), Image.Resampling.LANCZOS)
             if small.mode not in ("RGB", "RGBA"):
-                small = small.convert("RGB")
+                small = small.convert("RGBA" if small.has_transparency_data else "RGB")
             atomic_save(small, thumb, "WEBP", quality=lim["thumbQuality"], method=lim["thumbMethod"])
             small.close()
         dest = job.get("compressed")

@@ -180,7 +180,7 @@ func (a *App) work(job M) (M, error) {
 	}
 	return result.Result, nil
 }
-func (a *App) process(path, key string, lim M, thumb, compressed bool) (M, error) {
+func (a *App) process(path, key string, lim M, thumb, compressed bool, clean ...bool) (M, error) {
 	t, c := "", ""
 	if thumb {
 		t = pathIn(filepath.Join(a.data, "thumbs"), key+".webp")
@@ -190,13 +190,21 @@ func (a *App) process(path, key string, lim M, thumb, compressed bool) (M, error
 	if compressed {
 		c = pathIn(filepath.Join(a.data, "compressed"), ckey)
 	}
-	info, err := a.processTo(path, lim, t, c)
+	sanitized := ""
+	if len(clean) > 0 && clean[0] {
+		sanitized = path + ".clean"
+		defer os.Remove(sanitized)
+	}
+	info, err := a.processTo(path, lim, t, c, sanitized)
+	if err == nil && sanitized != "" {
+		err = replaceOriginal(sanitized, path)
+	}
 	if _, ok := info["c_size"]; ok {
 		info["c_key"] = ckey
 	}
 	return info, err
 }
-func (a *App) processTo(path string, lim M, thumb, compressed string) (M, error) {
+func (a *App) processTo(path string, lim M, thumb, compressed string, sanitized ...string) (M, error) {
 	a.poolMu.Lock()
 	for a.active >= num(lim["concurrency"]) {
 		a.poolCond.Wait()
@@ -205,6 +213,9 @@ func (a *App) processTo(path string, lim M, thumb, compressed string) (M, error)
 	a.poolMu.Unlock()
 	defer func() { a.poolMu.Lock(); a.active--; a.poolCond.Broadcast(); a.poolMu.Unlock() }()
 	job := M{"op": "process", "path": path, "limits": lim}
+	if len(sanitized) > 0 && sanitized[0] != "" {
+		job["sanitized"] = sanitized[0]
+	}
 	if thumb != "" {
 		job["thumb"] = thumb
 	}
@@ -256,16 +267,23 @@ func (a *App) registerFile(path, key, filename string, u M, tag string, local bo
 	tag = cleanTag(tag, u)
 	fi, e := os.Stat(path)
 	must(e)
+	modified := fi.ModTime()
 	if !local {
 		a.checkUpload(u, fi.Size())
 	}
-	info, e := a.process(path, key, a.limits(u), true, true)
+	info, e := a.process(path, key, a.limits(u), true, true, true)
 	if e != nil {
 		fail(400, e.Error())
 	}
+	fi, e = os.Stat(path)
+	must(e)
+	if !local {
+		a.checkUpload(u, fi.Size())
+		filename = filepath.Base(key)
+	}
 	created := nowISO()
 	if local {
-		created = fi.ModTime().UTC().Format("2006-01-02T15:04:05+00:00")
+		created = modified.UTC().Format("2006-01-02T15:04:05+00:00")
 	}
 	row := M{"id": id(7), "key": key, "owner_id": u["id"], "tag": truncate(strings.TrimSpace(tag), 40), "orig_name": truncate(filepath.Base(filename), 120), "mime": info["mime"], "width": info["width"], "height": info["height"], "size": fi.Size(), "created_at": created}
 	for _, k := range []string{"c_key", "c_mime", "c_width", "c_height", "c_size"} {

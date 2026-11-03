@@ -315,12 +315,12 @@ func (a *App) runUpload(row M) {
 		}
 		lim = a.limits(u)
 		// A failed codec may have left a partial output. Never reuse it as a valid thumbnail.
-		for _, name := range []string{"thumb.webp", "compressed.webp", "compressed.jpg", "compressed.png"} {
+		for _, name := range []string{"clean.original", "thumb.webp", "compressed.webp", "compressed.jpg", "compressed.png"} {
 			if e := os.Remove(filepath.Join(dir, name)); e != nil && !os.IsNotExist(e) {
 				must(e)
 			}
 		}
-		info, e = a.processTo(path, lim, filepath.Join(dir, "thumb.webp"), filepath.Join(dir, "compressed."+outputExt(lim)))
+		info, e = a.processTo(path, lim, filepath.Join(dir, "thumb.webp"), filepath.Join(dir, "compressed."+outputExt(lim)), filepath.Join(dir, "clean.original"))
 		must(e)
 	})
 	a.writeMu.Lock()
@@ -340,7 +340,11 @@ func (a *App) runUpload(row M) {
 			if u == nil {
 				fail(403, "上传账号已停用或删除")
 			}
-			a.checkUpload(u, num(row["size"]))
+			cleanSize := num(info["original_size"])
+			if cleanSize <= 0 {
+				fail(400, "未生成已清除个人信息的原图")
+			}
+			a.checkUpload(u, cleanSize)
 			key := str(row["key"])
 			ckey := ""
 			if info["c_size"] != nil {
@@ -350,7 +354,7 @@ func (a *App) runUpload(row M) {
 			if a.image(row["image_id"]) != nil {
 				panic("upload receipt conflict")
 			}
-			must(copyOriginal(filepath.Join(dir, "original.part"), pathIn(filepath.Join(a.data, "uploads"), key)))
+			must(copyOriginal(filepath.Join(dir, "clean.original"), pathIn(filepath.Join(a.data, "uploads"), key)))
 			must(promoteFile(filepath.Join(dir, "thumb.webp"), pathIn(filepath.Join(a.data, "thumbs"), key+".webp")))
 			if ckey != "" {
 				must(promoteFile(filepath.Join(dir, "compressed."+outputExt(lim)), pathIn(filepath.Join(a.data, "compressed"), ckey)))
@@ -358,7 +362,7 @@ func (a *App) runUpload(row M) {
 			tx, e := a.db.Begin()
 			must(e)
 			defer tx.Rollback()
-			_, e = tx.Exec("INSERT INTO images(id,key,owner_id,tag,orig_name,mime,width,height,size,c_key,c_mime,c_width,c_height,c_size,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", row["image_id"], key, u["id"], row["tag"], truncate(str(row["filename"]), 120), info["mime"], info["width"], info["height"], row["size"], nilIfEmpty(ckey), info["c_mime"], info["c_width"], info["c_height"], info["c_size"], nowISO())
+			_, e = tx.Exec("INSERT INTO images(id,key,owner_id,tag,orig_name,mime,width,height,size,c_key,c_mime,c_width,c_height,c_size,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", row["image_id"], key, u["id"], row["tag"], filepath.Base(key), info["mime"], info["width"], info["height"], cleanSize, nilIfEmpty(ckey), info["c_mime"], info["c_width"], info["c_height"], info["c_size"], nowISO())
 			must(e)
 			_, e = tx.Exec("UPDATE upload_sessions SET status='done',error='',updated_at=?,expires=? WHERE id=?", nowISO(), time.Now().Add(7*24*time.Hour).Unix(), uploadID)
 			must(e)

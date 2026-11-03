@@ -21,7 +21,7 @@ FROM python:3.13-slim
 WORKDIR /app
 COPY backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
-COPY backend/image_worker.py ./image_worker.py
+COPY backend/image_worker.py backend/image_metadata.py ./
 COPY --from=server-build /gallery /app/gallery
 COPY --from=frontend-build /src/dist /app/web
 ENV DATA_DIR=/data WEB_DIR=/app/web IMAGE_WORKER=/app/image_worker.py \
