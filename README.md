@@ -310,7 +310,7 @@ scripts/              本地启动、文档同步、镜像发布
 Dockerfile            Vue 构建 → Go 构建 → Go + 按需 Pillow 运行环境
 ```
 
-维护者发布流程见 [发布说明](docs/release.md)。`README.md` 是介绍的主源，执行 `python scripts/sync-docs.py` 生成 Docker Hub 版文档，发布时同步上传。构建镜像和更新 GitHub/Docker Hub 元数据需要维护者自己的登录授权。
+维护者发布流程见 [发布说明](docs/release.md)。`README.md` 是介绍的主源，执行 `python scripts/sync-docs.py` 生成 Docker Hub 版文档，发布时同步上传；受 Docker Hub 25,000 字节限制，超长时本地开发章节改为完整文档链接。构建镜像和更新 GitHub/Docker Hub 元数据需要维护者自己的登录授权。
 
 历史 `PLAN` 文档只记录旧版本设计，以当前源码和本 README 为准。
 
