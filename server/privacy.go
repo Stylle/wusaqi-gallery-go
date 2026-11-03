@@ -169,7 +169,7 @@ func (a *App) serveMedia(w http.ResponseWriter, r *http.Request) bool {
 
 func (a *App) adminTags(w http.ResponseWriter) {
 	s := a.settings()
-	rows := a.rows("SELECT COALESCE(tag,'') AS name,COUNT(*) AS count FROM images GROUP BY tag ORDER BY tag")
+	rows := a.rows("SELECT COALESCE(tag,'') AS name,COUNT(*) AS count FROM images GROUP BY COALESCE(tag,'') ORDER BY name")
 	seen := map[string]bool{}
 	for _, row := range rows {
 		seen[str(row["name"])] = true
