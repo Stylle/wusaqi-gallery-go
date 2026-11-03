@@ -7,6 +7,18 @@ import (
 	"unsafe"
 )
 
+func replaceOriginal(src, dest string) error {
+	from, err := windows.UTF16PtrFromString(src)
+	if err != nil {
+		return err
+	}
+	to, err := windows.UTF16PtrFromString(dest)
+	if err != nil {
+		return err
+	}
+	return windows.MoveFileEx(from, to, windows.MOVEFILE_REPLACE_EXISTING|windows.MOVEFILE_WRITE_THROUGH)
+}
+
 func physicalMemoryMB() int64 {
 	var status struct {
 		Length, Load                                                                                         uint32

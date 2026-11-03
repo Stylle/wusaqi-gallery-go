@@ -264,6 +264,8 @@ watch(() => store.token, (token, previous) => {
       </div>
     </div>
 
+      <p class="hint muted metadata-notice">{{ t('新上传图片会自动清除定位、拍摄时间、设备及作者等元数据；清理失败不会入库。画面中的文字、人脸或水印不会自动移除。') }}</p>
+
     <div class="panel tag-picker">
       <div class="row" style="margin:0;gap:8px;align-items:center">
         <span class="muted">{{ t('标签') }}</span>
