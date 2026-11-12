@@ -47,6 +47,11 @@ def suite(data):
         proc,log,call,env=qa.run(data)
         state=call('GET','/api/admin/local/repair',token=admin)[1]
         qa.check('cleanup mode, pause and pending work survive restart',state['job']['mode']=='metadata' and state['job']['status']=='paused' and state['counts']['pending']>0)
+        # A fast worker may finish this random-ID fixture before the pause
+        # request arrives. With the queue now paused and restarted, explicitly
+        # stage the pending -> deleted -> skipped case we intend to verify.
+        with sqlite3.connect(data/'metadata.db') as db:
+            db.execute("UPDATE repair_items SET status='pending',attempts=0,next_attempt=0,error='' WHERE image_id=?",(images[3][0]['id'],))
         call('DELETE','/api/images/'+images[3][0]['id'],token=admin)
         call('POST','/api/admin/local/repair/resume',{'batchSize':2},admin)
         def wait():

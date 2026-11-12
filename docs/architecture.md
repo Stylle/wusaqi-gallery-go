@@ -148,3 +148,11 @@ docker inspect --format '{{json .State.Health}}' wusaqi-memory-test
 功能源码 `217c38f`，镜像摘要与双架构信息见 [发布记录](release.md)。一万条图片元数据、16 并发、1024 次请求；默认容器空闲 12.31 MiB、浏览后 16.25 MiB、上传结束后中位数 16.20 MiB，图片处理峰值 126.82 MiB。1 核 / 512 MiB 下对应 10.78 / 14.69 / 14.47 MiB，处理峰值 125.15 MiB。均为 Docker usage 口径，处理峰值不计入常驻目标。
 
 原始数据：[默认资源](benchmarks/docker-metadata-amd64.json)、[1 核 / 512 MiB](benchmarks/docker-metadata-amd64-512m.json)。新增任务队列仍只在处理图片时启动 Pillow，清理/压缩结束后退出；元数据清理与上传完整性、权限及故障回滚另由真实 HTTP 测试验证，不能把稳态数字当作任意图片的解码峰值上限。
+
+## 2026-11-12 Telegram 版实测
+
+功能源码 `ce2f991`。相同一万条元数据、16 并发、1024 次请求：默认容器空闲 **10.99 MiB**，浏览后 **16.48 MiB**，上传结束后中位数 **17.09 MiB**；1 核 / 512 MiB 对应 **10.34 / 14.68 / 15.09 MiB**。图片处理峰值分别 **128.08 / 125.51 MiB**，处理结束后没有常驻图片工作进程。
+
+本次未提供真实 Telegram Token，以上数字对应默认关闭的 Bot 配置。启用后仍由同一 Go 进程长轮询，文件通过磁盘流发送，不在 Go 内存中缓存整张图片；真实 Telegram 连接下的占用尚未实测。权限、发送与断线重连使用模拟 Bot API 验证，并在 ARM64 容器通过 7 项新增专项测试。
+
+原始报告：[默认资源](benchmarks/docker-telegram-amd64.json)、[1 核 / 512 MiB](benchmarks/docker-telegram-amd64-512m.json)。镜像来源与摘要见 [发布记录](release.md)。

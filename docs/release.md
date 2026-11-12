@@ -2,6 +2,18 @@
 
 发布前使用独立测试数据完成容器功能、迁移、图片处理与内存检查；镜像标签与源码提交对应，凭据只交给官方认证接口或 Docker CLI，不写入源码、镜像层和日志。
 
+## 2026-11-12 发布记录
+
+- 功能源码 `ce2f991`：新增管理员专用 Telegram 机器人，私聊 `/random`、`/random 标签名`、`/tags`；五分钟一次性绑定、实时管理员角色校验与解除绑定。普通用户、群聊及频道请求没有回复。
+- Token 保存后不回显；私密图默认关闭，开启后仅明确指定 `/random 私密` 可取。Go 长轮询复用现有进程，直接流式发送文件，无需开放站点、图片外链或新端口。
+- 镜像 `stylle/wusaqi-gallery:ce2f991` / `:latest`，支持 `linux/amd64` 与 `linux/arm64`；旧版本标签保留。
+- 索引摘要 `sha256:653f3cf452da360d51bdf3aa45cddbff2f0bb4321119385b0f56ab8188d63cb1`；amd64 `sha256:20300499811341306bf65b2c5b25f7e45b94669c5a96e2b6891a03199109846d`；arm64 `sha256:ca3e9f0631dda3c1ad814818620d222a493e53980104ca587a0bd42f8c1ee872`。
+- 本地 31 项 Go、13 项前端行为、355 项 HTTP 与 26 项部署检查通过；Windows、Linux、标准 Dockerfile 容器 CI 全通过：[43193234350](https://github.com/Stylle/wusaqi-gallery-go/actions/runs/43193234350)。本机最终镜像全部 355 项服务检查通过，修正一个旧测试的暂停时序后额外连续三次验证清理队列。
+- ARM64 的 7 项新增 Telegram 专项测试与 12 项部署冒烟通过；Docker Hub 实际拉取后 12 项冒烟通过。真实 Telegram Token 未提供，尚未进行真实账号收图联调；完成配置步骤见 [接入指南](guide.md#telegram-管理员机器人)。
+- 默认容器稳态 10.99 / 16.48 / 17.09 MiB；1 核 / 512 MiB 为 10.34 / 14.68 / 15.09 MiB，机器人使用默认关闭配置。测量口径、处理峰值及原始数据见 [内存记录](architecture.md#2026-11-12-telegram-版实测)。
+- 保留远端已整理的简洁 README、最简 Compose 和完整指南结构；完整功能和接入说明写入使用指南，Docker Hub 介绍继续从 README 自动生成。
+- 本地下载大模块时网络停滞，最终构建仅在 builder 阶段预填已校验的 Go 模块缓存；运行层、依赖版本与源码不变，标准 Dockerfile 的正常构建由上述 CI 验证。
+
 ## 2026-11-03 发布记录
 
 - 功能源码 `217c38f`，包含私密标签、管理员显示开关、站点公开访问、外链总开关和标签规则、版权联系说明。
@@ -48,11 +60,11 @@
 
 GitHub About 建议：
 
-> 轻量自部署图片画廊与随机图 API。Vue 3 + Go + SQLite，滚动加载、多用户、标签、压缩、备份，单容器部署。
+> 轻量自部署图片画廊与随机图 API。Go + Vue + SQLite，管理员 Telegram 机器人、私密标签、断点上传与后台图片队列，单容器部署。
 
 Docker Hub short description（不超过 100 字符）：
 
-> Lightweight self-hosted gallery & random image API. Go + Vue + SQLite; on-demand image processing.
+> Go + Vue + SQLite gallery. Admin Telegram bot, private tags, resumable uploads, metadata cleanup.
 
 GitHub README 主源是仓库根目录 `README.md`；Docker Hub Overview 由 `python scripts/sync-docs.py` 生成到 `docs/dockerhub-description.md`，其中相对文档链接会转成 GitHub 地址。发布后按实际标签与验证结果更新介绍，再重新同步。
 
