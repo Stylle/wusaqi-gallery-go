@@ -43,5 +43,8 @@
   "external_links_enabled": "1",
   "external_disabled_tags": "[]",
   "copyright_notice": "如本站内容涉嫌侵权或违规，请联系管理员处理。",
-  "copyright_contact": ""
+  "copyright_contact": "",
+  "telegram_enabled": "0",
+  "telegram_bot_token": "",
+  "telegram_include_private": "0"
 }

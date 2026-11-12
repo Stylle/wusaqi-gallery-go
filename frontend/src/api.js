@@ -122,6 +122,13 @@ export const clearDerived = (token) => fetch('/api/admin/local/clear-derived', {
 export const getSettings = (token) =>
   fetch('/api/admin/settings', { headers: auth(token) }).then(json)
 
+export const telegramStatus = token =>
+  fetch('/api/admin/telegram/status', { headers: auth(token), cache: 'no-store' }).then(json)
+export const telegramAction = (token, action, value = {}) =>
+  fetch('/api/admin/telegram/' + action, { method: 'POST',
+    headers: { ...auth(token), 'Content-Type': 'application/json' }, body: JSON.stringify(value),
+  }).then(json)
+
 // 压缩方案运行态：自动探测结果 + 各档位参数 + 支持的格式
 export const getSystem = (token) =>
   fetch('/api/admin/system', { headers: auth(token) }).then(json)

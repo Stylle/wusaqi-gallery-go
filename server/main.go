@@ -38,6 +38,7 @@ type App struct {
 	workerContext             context.Context
 	workerCancel              context.CancelFunc
 	workerWG                  sync.WaitGroup
+	telegram                  *telegramBot
 }
 
 func newApp(data, web string) *App {
@@ -50,6 +51,7 @@ func newApp(data, web string) *App {
 	a.db = openDB(filepath.Join(data, "metadata.db"))
 	a.initDB(true)
 	a.workerContext, a.workerCancel = context.WithCancel(context.Background())
+	a.telegram = newTelegramBot(a)
 	a.recoverWork()
 	return a
 }
@@ -294,6 +296,8 @@ func main() {
 	go a.background()
 	a.workerWG.Add(1)
 	go a.workLoop()
+	a.workerWG.Add(1)
+	go a.telegram.run()
 	s := &http.Server{Addr: env("LISTEN_ADDR", "127.0.0.1:8000"), Handler: a, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 << 10}
 	stop, done := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer done()

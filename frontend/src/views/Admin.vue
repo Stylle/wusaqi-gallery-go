@@ -12,6 +12,7 @@ import {
 import { store, isAdmin, refreshMe, ensureAuth, clearToken } from '../auth.js'
 import { setSite, applySite } from '../site.js'
 import { t } from '../i18n.js'
+import TelegramAdmin from '../components/TelegramAdmin.vue'
 
 // 统一的错误文案：401 不再裸露 "login required"
 function errText(e) {
@@ -72,6 +73,7 @@ const groups = [
       { k: 'auth_ban_minutes', label: '触发后封禁时长 (分钟)', type: 'number' },
     ] },
     { id: 'notify', label: '📣 通知', custom: 'notify' },
+    { id: 'telegram', label: '✈️ Telegram 机器人', custom: 'telegram' },
     { id: 'bans', label: '🚫 封禁与名单', custom: 'bans' },
   ]},
   { title: '媒体维护', items: [
@@ -952,6 +954,8 @@ const notifyPreview = computed(() => {
           </template>
           <div v-else class="spinner"></div>
         </template>
+
+        <TelegramAdmin v-else-if="currentGroup()?.custom === 'telegram'" :settings="s" :saved="saved" :saving="saveBusy" :message="msg" :message-bad="msgBad" @save="save" @settings="value => { s = value; saved = { ...value } }" />
 
         <!-- 通知 -->
         <template v-else-if="currentGroup()?.custom === 'notify'">

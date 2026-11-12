@@ -101,7 +101,7 @@ func (a *App) system() M {
 }
 func (a *App) saveSettings(v M) {
 	clean := map[string]string{}
-	switches := ",site_public,external_links_enabled,random_public,notify_admin_login,notify_security,notify_ban,notify_restore,notify_daily,notify_weekly,notify_monthly,"
+	switches := ",telegram_enabled,telegram_include_private,site_public,external_links_enabled,random_public,notify_admin_login,notify_security,notify_ban,notify_restore,notify_daily,notify_weekly,notify_monthly,"
 	ranges := map[string][2]int64{"comp_quality": {1, 100}, "comp_method": {0, 6}, "comp_max_width": {0, 12000}, "comp_max_pixels": {0, 500}, "comp_concurrency": {0, 8}, "upload_max_mb": {0, 200}, "new_user_quota_mb": {0, 1e9}, "new_user_max_upload_mb": {0, 200}, "new_user_daily": {0, 1e9}, "new_user_weekly": {0, 1e9}, "new_user_monthly": {0, 1e9}, "rate_limit": {0, 100000}, "rate_ban_minutes": {1, 5256000}, "auth_max_fails": {1, 100000}, "auth_ban_minutes": {1, 5256000}, "session_hours": {1, 87600}, "remember_days": {1, 3650}}
 	choices := map[string]string{"comp_profile": ",auto,tiny,small,normal,custom,", "comp_format": ",webp,jpeg,png,", "theme_style": ",gradient,solid,", "notify_method": ",POST,PUT,GET,", "notify_body_type": ",json,text,"}
 	for k, x := range v {
@@ -109,7 +109,16 @@ func (a *App) saveSettings(v M) {
 			continue
 		}
 		s := strings.TrimSpace(str(x))
-		if strings.Contains(switches, ","+k+",") {
+		if k == "telegram_bot_token" {
+			// The token is write-only. Empty inputs preserve the stored secret;
+			// deleting it requires the explicit administrator action below.
+			if s == "" {
+				continue
+			}
+			if !telegramTokenPattern.MatchString(s) {
+				fail(400, "Telegram Bot Token 格式无效")
+			}
+		} else if strings.Contains(switches, ","+k+",") {
 			if truth(x) {
 				s = "1"
 			} else {
@@ -171,7 +180,14 @@ func (a *App) saveSettings(v M) {
 	if len(clean) == 0 {
 		fail(400, "no valid fields")
 	}
+	stored := a.settings()
 	a.updateSettings(clean)
+	for k, v := range clean {
+		if strings.HasPrefix(k, "telegram_") && stored[k] != v {
+			a.telegram.changed()
+			break
+		}
+	}
 }
 func (a *App) adminSettings() map[string]string {
 	stored := a.settings()
@@ -179,6 +195,7 @@ func (a *App) adminSettings() map[string]string {
 	for k := range a.defaults {
 		out[k] = stored[k]
 	}
+	out["telegram_bot_token"] = ""
 	return out
 }
 func (a *App) adminRoute(w http.ResponseWriter, r *http.Request) {
@@ -189,6 +206,8 @@ func (a *App) adminRoute(w http.ResponseWriter, r *http.Request) {
 	u := a.require(r, true)
 	p, m := r.URL.Path, r.Method
 	switch {
+	case strings.HasPrefix(p, "/api/admin/telegram/"):
+		a.telegram.route(w, r, u)
 	case p == "/api/admin/settings" && m == "GET":
 		respond(w, a.adminSettings())
 	case p == "/api/admin/settings" && m == "PUT":

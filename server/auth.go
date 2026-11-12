@@ -232,6 +232,7 @@ func (a *App) usersRoute(w http.ResponseWriter, r *http.Request) {
 			f["pwd"] = password(pw)
 		}
 		a.update("users", "id", uid, f)
+		a.telegram.changed()
 		respond(w, M{"ok": true, "user": a.publicUser(a.one("SELECT * FROM users WHERE id=?", uid))})
 		return
 	}
@@ -253,6 +254,7 @@ func (a *App) usersRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		a.exec("DELETE FROM sessions WHERE user_id=?", uid)
 		a.exec("DELETE FROM users WHERE id=?", uid)
+		a.telegram.changed()
 		respond(w, M{"ok": true, "removedImages": removed})
 		return
 	}

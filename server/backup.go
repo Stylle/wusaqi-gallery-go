@@ -297,6 +297,7 @@ func (a *App) restoreBackup(w http.ResponseWriter, r *http.Request, u M) {
 	a.db = openDB(filepath.Join(a.data, "metadata.db"))
 	a.initDB(false)
 	committed = true
+	a.telegram.changed()
 	a.cleanUploadStaging()
 	a.setJob(M{"running": false, "cancel": false, "current": ""})
 	a.fire("restore", "", M{"images": images, "files": copied, "operator": u["username"]})

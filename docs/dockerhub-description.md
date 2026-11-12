@@ -11,6 +11,7 @@
 - 原图、压缩图、缩略图链接与随机图 API；私密标签、可撤销外链。
 - 自动清除新图片个人元数据；已有图库可在备份后手动批量清理。
 - 用户配额、批量下载与编辑、持久化图片任务、Webhook 和整站备份。
+- Telegram 管理员机器人：私聊随机图、按标签取图，一次性绑定、实时撤销权限。
 
 ## 最简 Docker Compose
 
@@ -46,9 +47,18 @@ docker compose up -d
 | 上传中断、续传与失败恢复 | [传输说明](https://github.com/Stylle/wusaqi-gallery-go/blob/main/docs/guide.md#上传断线失败与恢复) |
 | 本地图库、索引维护、后台队列 | [批量处理](https://github.com/Stylle/wusaqi-gallery-go/blob/main/docs/guide.md#批量处理与索引维护) |
 | 旧 Python 版本迁移、升级注意事项 | [迁移指南](https://github.com/Stylle/wusaqi-gallery-go/blob/main/docs/guide.md#从旧-python-版本升级) |
+| Telegram 机器人配置、绑定与指令 | [机器人接入](https://github.com/Stylle/wusaqi-gallery-go/blob/main/docs/guide.md#telegram-管理员机器人) |
 | API、随机图与调用示例 | [接口说明](https://github.com/Stylle/wusaqi-gallery-go/blob/main/docs/guide.md#api) |
 | 开发、构建与发布 | [开发说明](https://github.com/Stylle/wusaqi-gallery-go/blob/main/docs/guide.md#本地运行和验证) · [发布流程](https://github.com/Stylle/wusaqi-gallery-go/blob/main/docs/release.md) |
 | 内存测量方法与原始结果 | [架构与内存](https://github.com/Stylle/wusaqi-gallery-go/blob/main/docs/architecture.md) |
+
+## Telegram 管理员机器人
+
+后台打开「Telegram 机器人」，填写独立 Bot 的 BotFather Token、开启并保存。连接成功后生成绑定码，用自己的 Telegram 账号私聊 Bot 发送完整绑定指令。
+
+绑定管理员可发送 `/random`、`/random 风景`、`/tags`；普通用户和群聊无响应，站点账号停用/降级或解除绑定后立即失效。私密图片默认禁止发送，开启后只能明确使用 `/random 私密` 获取。
+
+Go 进程长轮询，无需新增端口或公开图片外链。图片会上传到 Telegram，已发送的内容无法通过站点开关撤回。完整步骤、代理和文件限制见 [接入指南](https://github.com/Stylle/wusaqi-gallery-go/blob/main/docs/guide.md#telegram-管理员机器人)。
 
 ## 更新与备份
 
