@@ -116,7 +116,7 @@ QA_DOCKER_IMAGE=wusaqi-gallery:multi QA_DOCKER_PLATFORM=linux/arm64 \
   QA_STARTUP_TIMEOUT=120 QA_REQUEST_TIMEOUT=180 python qa/container-smoke.py
 ```
 
-本次 Windows 构建机使用 WSL 2 中的专用 `example-build` Ubuntu 和 Docker Engine；PowerShell 可通过 `wsl -d example-build -u root -- docker version` 检查环境。项目的本地预览仍使用 `http://127.0.0.1:8010`，现由真实容器运行。WSL 的系统组件和 Docker daemon 占用不属于应用容器的常驻内存。
+Windows 可使用具有 Docker Engine 的 WSL 2 发行版构建，发行版名称由部署者自行选择。先在所选 Linux 环境执行 `docker version`，确认客户端与服务端均可用。WSL 系统组件及 Docker daemon 的占用不属于应用容器常驻内存。
 
 本地开发时保持一个 WSL 会话运行：仅有 systemd 后台服务时，WSL 可能自动退出，容器和 `/run` 中的临时认证会随之停止或清除。实际 Linux VPS/NAS 部署没有这个 Windows 会话要求。
 

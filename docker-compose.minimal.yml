@@ -1,0 +1,11 @@
+services:
+  gallery:
+    image: stylle/wusaqi-gallery:latest # 可改为已发布的固定版本标签
+    container_name: wusaqi-gallery     # 可省略或改名
+    restart: unless-stopped
+    ports:
+      - "8300:80"                      # 左侧访问端口可改，右侧 80 保留
+    environment:
+      ADMIN_PASSWORD: "change-me-please" # 必改：首次创建管理员的密码
+    volumes:
+      - ./data:/data                  # 必须保留；左侧可改为专用绝对目录

@@ -135,4 +135,4 @@ share_base_url, upload_default_tags, session_hours, remember_days
 
 - 用户注册（仍由管理员建号，符合私人图床定位）
 - 图片编辑/裁切、相册分组、对象存储多后端
-- Docker 相关（本机无 Docker，NAS 侧逻辑不变）
+- Docker 相关（需在独立容器环境验收，不能仅凭静态检查判断部署成功）
