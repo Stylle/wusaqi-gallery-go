@@ -1,5 +1,6 @@
 """Clean existing originals/variants with a durable admin queue and rollback."""
 import io
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -50,8 +51,9 @@ def suite(data):
         # A fast worker may finish this random-ID fixture before the pause
         # request arrives. With the queue now paused and restarted, explicitly
         # stage the pending -> deleted -> skipped case we intend to verify.
-        with sqlite3.connect(data/'metadata.db') as db:
+        with closing(sqlite3.connect(data/'metadata.db')) as db:
             db.execute("UPDATE repair_items SET status='pending',attempts=0,next_attempt=0,error='' WHERE image_id=?",(images[3][0]['id'],))
+            db.commit()
         call('DELETE','/api/images/'+images[3][0]['id'],token=admin)
         call('POST','/api/admin/local/repair/resume',{'batchSize':2},admin)
         def wait():
