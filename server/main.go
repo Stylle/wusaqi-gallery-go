@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -184,6 +185,23 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	} else {
 		w.Header().Set("Cache-Control", "no-cache")
+	}
+	if filepath.Clean(p) == filepath.Join(a.web, "index.html") {
+		// Emit the current site palette before CSS/JS load, including first visits.
+		// Do not use the file mtime: settings may change without a frontend build.
+		html, err := os.ReadFile(p)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		palette := "solid"
+		if a.settings()["theme_style"] == "gradient" {
+			palette = "gradient"
+		}
+		html = bytes.Replace(html, []byte(`data-style="solid"`), []byte(`data-style="`+palette+`"`), 1)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(html))
+		return
 	}
 	http.ServeFile(w, r, p)
 }

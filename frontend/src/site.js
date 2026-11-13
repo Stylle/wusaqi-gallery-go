@@ -15,7 +15,7 @@ export const site = reactive({
   upload_default_tags: '',
   upload_max_mb: '',     // 全局单图上限（MB），后端算好下发
   upload_formats: '',    // 支持的扩展名，逗号分隔
-  theme_style: 'solid',  // 'gradient' = 炫彩渐变 / 'solid' = 纯色
+  theme_style: document.documentElement.dataset.style === 'gradient' ? 'gradient' : 'solid',
 })
 
 export function setSite(obj) {
