@@ -355,7 +355,7 @@ onUnmounted(() => {
       <input type="checkbox" v-model="ui.onlyMine" /> {{ t('仅我的') }}
     </label>
     <label v-if="isAdmin" class="mine-toggle" :class="{ on: ui.showPrivate }">
-      <input type="checkbox" v-model="ui.showPrivate" /> {{ t('显示私密图片') }}
+      <input type="checkbox" v-model="ui.showPrivate" /> {{ t('隐藏') }}
     </label>
     <div class="size-switch">
       <button v-for="sz in [['s', '小'], ['m', '中'], ['l', '大']]" :key="sz[0]"

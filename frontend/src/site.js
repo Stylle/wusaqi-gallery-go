@@ -2,7 +2,7 @@ import { reactive } from 'vue'
 
 // 站点公开配置（后台可自定义部分）+ 分享基址逻辑
 export const site = reactive({
-  site_title: 'wusaqi-gallery',
+  site_title: document.title,
   site_icon: '',
   site_tags: '',
   site_footer: '',

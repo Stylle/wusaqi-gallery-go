@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"html"
 	"io"
 	"log"
 	"net"
@@ -189,18 +190,20 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if filepath.Clean(p) == filepath.Join(a.web, "index.html") {
 		// Emit the current site palette before CSS/JS load, including first visits.
 		// Do not use the file mtime: settings may change without a frontend build.
-		html, err := os.ReadFile(p)
+		page, err := os.ReadFile(p)
 		if err != nil {
 			http.NotFound(w, r)
 			return
 		}
 		palette := "solid"
-		if a.settings()["theme_style"] == "gradient" {
+		settings := a.settings()
+		if settings["theme_style"] == "gradient" {
 			palette = "gradient"
 		}
-		html = bytes.Replace(html, []byte(`data-style="solid"`), []byte(`data-style="`+palette+`"`), 1)
+		page = bytes.Replace(page, []byte(`data-style="solid"`), []byte(`data-style="`+palette+`"`), 1)
+		page = bytes.Replace(page, []byte(`<title>wusaqi-gallery</title>`), []byte("<title>"+html.EscapeString(settings["site_title"])+"</title>"), 1)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(html))
+		http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(page))
 		return
 	}
 	http.ServeFile(w, r, p)

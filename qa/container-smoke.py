@@ -32,6 +32,7 @@ def main():
             for key in ("url", "thumb", "compressed"):
                 qa.check("container serves " + key, bool(item.get(key)) and call("GET", item[key], raw=True)[0] == 200)
             qa.check("admin settings save", call("PUT", "/api/admin/settings", {"site_title":"Container smoke"}, token)[0] == 200)
+            qa.check("site title is rendered in initial HTML", b'<title>Container smoke</title>' in call("GET", "/", raw=True)[1])
             status, backup = call("GET", "/api/admin/backup", token=token, raw=True)
             qa.check("container backup streams a valid ZIP", status == 200 and zipfile.is_zipfile(io.BytesIO(backup)))
             qa.check("image healthcheck succeeds", subprocess.run(qa.service_command(env, healthcheck=True), capture_output=True).returncode == 0)

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { runInNewContext } from 'node:vm'
+import 'vue'
 
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
 const bootstrap = html.match(/<script>([\s\S]*?)<\/script>/)[1]
@@ -21,4 +22,10 @@ test('first paint still follows the system when browser storage is unavailable',
   const document = { documentElement: { dataset: {} } }
   runInNewContext(bootstrap, { document, localStorage: { getItem: () => { throw new Error('denied') } }, matchMedia: () => ({ matches: true }) })
   assert.equal(document.documentElement.dataset.theme, 'dark')
+})
+test('Vue starts with the server-rendered site title instead of the default brand', async () => {
+  globalThis.document = { title: '乌索契图床 & Gallery', documentElement: { dataset: { style: 'solid' } } }
+  const { site } = await import('../src/site.js')
+  assert.equal(site.site_title, document.title)
+  assert.equal(site.theme_style, 'solid')
 })
