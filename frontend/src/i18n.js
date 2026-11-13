@@ -8,6 +8,19 @@ export const i18n = reactive({
 })
 
 const EN = {
+  '页面滚动': 'Page scrolling', '回到顶部': 'Back to top', '前往底部': 'Go to bottom',
+  '关于': 'About', '关于项目': 'About this project', '主题': 'Theme', '切换语言': 'Switch language',
+  '轻量、自部署的图片画廊与随机图服务，让图片管理更简单。': 'A lightweight, self-hosted gallery and random image service that makes managing images simpler.',
+  '浏览与整理': 'Browse and organize',
+  '瀑布流浏览、标签筛选、批量管理与图片下载，适配桌面和手机。': 'Browse a masonry gallery, filter by tag, manage images in batches and download them on desktop or mobile.',
+  '上传与处理': 'Upload and process',
+  '支持断点上传、照片元数据清理，以及缩略图和压缩图的后台处理。': 'Resume interrupted uploads, remove personal photo metadata and generate thumbnails and compressed images in the background.',
+  '访问与分享': 'Access and sharing',
+  '提供私密标签、可撤销外链、随机图 API 和管理员 Telegram 机器人。': 'Private tags, revocable sharing links, a random image API and an administrator-only Telegram bot.',
+  '项目仓库': 'Project repository',
+  '在 GitHub 查看源代码、部署文档和更新，或提交问题与建议。': 'Visit GitHub for source code, deployment documentation and updates, or to report issues and suggest improvements.',
+  '打开 GitHub 仓库': 'Open GitHub repository', '使用与部署指南': 'User and deployment guide',
+  '项目使用 Go、Vue 3 与 SQLite 构建，支持 Docker 单容器部署。站点内容及图片由部署者管理。': 'Built with Go, Vue 3 and SQLite, with single-container Docker deployment. Site content and images are managed by the site operator.',
   '✈️ Telegram 机器人': '✈️ Telegram bot',
   '通过私聊指令获取随机图。仅绑定且仍处于启用状态的站点管理员可用，普通用户和群聊请求均被忽略。': 'Get random images in private chats. Only bound, enabled site administrators can use this bot. Other users and group chats are ignored.',
   '开启 Telegram 机器人': 'Enable Telegram bot',

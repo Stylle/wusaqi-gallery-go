@@ -60,7 +60,7 @@ function fallbackImage(e, it) {
 }
 const sentinel = ref(null)
 const grid = ref(null)
-const gridWidth = ref(Math.max(1, Math.min(window.innerWidth - 24, 1094)))
+const gridWidth = ref(Math.max(1, window.innerWidth - 24))
 const viewportWidth = ref(window.innerWidth)
 const columnCount = computed(() => columnsFor(gridWidth.value, viewportWidth.value, ui.viewSize))
 const columns = computed(() => masonryColumns(items.value, columnCount.value, gridWidth.value, viewportWidth.value <= 768 ? 8 : 12))

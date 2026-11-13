@@ -5,8 +5,10 @@ import Random from './views/Random.vue'
 import Upload from './views/Upload.vue'
 import Admin from './views/Admin.vue'
 import Login from './views/Login.vue'
+import About from './views/About.vue'
+import ThemeSwitch from './components/ThemeSwitch.vue'
+import ScrollControls from './components/ScrollControls.vue'
 import LockGate from './components/LockGate.vue'
-import { theme, setTheme } from './theme.js'
 import {
   store, ui, isAdmin, ensureAuth, loadSite, doLogout, setViewSize, clearToken,
 } from './auth.js'
@@ -16,7 +18,7 @@ import { i18n, t, setLang } from './i18n.js'
 
 const views = {
   gallery: Gallery, random: Random, upload: Upload,
-  admin: Admin, login: Login,
+  admin: Admin, login: Login, about: About,
 }
 // 需要登录的页面
 const locked = { random: true, upload: true, admin: true }
@@ -29,7 +31,7 @@ const pwdBusy = ref(false)
 const pwdForm = ref({ old: '', new: '' })
 
 // 校验中（有 token 但还没验完）不闪锁屏：交给页面内的 ensureAuth 处理
-const needsLogin = computed(() => !!locked[route.value] || (site.site_public !== '1' && route.value !== 'login'))
+const needsLogin = computed(() => !!locked[route.value] || (site.site_public !== '1' && !['login', 'about'].includes(route.value)))
 const isLocked = computed(() =>
   needsLogin.value && !(route.value === 'random' && site.random_public === '1' && site.site_public === '1') && !store.ok && (store.checked || !store.token))
 const authPending = computed(() => needsLogin.value && !!store.token && !store.checked && !store.ok)
@@ -126,14 +128,11 @@ onUnmounted(() => {
       <a href="#/gallery" :class="{ active: route === 'gallery' }">{{ t('画廊') }}</a>
       <a href="#/random" :class="{ active: route === 'random' }">{{ t('随机图') }}</a>
       <a href="#/upload" :class="{ active: route === 'upload' }">{{ t('上传') }}</a>
+      <a href="#/about" :class="{ active: route === 'about' }">{{ t('关于') }}</a>
 
       <!-- 手机端导航面板内附主题 / 语言切换（桌面隐藏） -->
       <div class="nav-mobile" @click.stop>
-        <div class="theme-switch">
-          <button :class="{ on: theme.pref === 'light' }" @click="setTheme('light')">☀️ {{ t('亮色') }}</button>
-          <button :class="{ on: theme.pref === 'dark' }" @click="setTheme('dark')">🌙 {{ t('暗色') }}</button>
-          <button :class="{ on: theme.pref === 'system' }" @click="setTheme('system')">💻 {{ t('跟随系统') }}</button>
-        </div>
+        <ThemeSwitch />
         <div class="theme-switch lang-switch">
           <button :class="{ on: i18n.lang === 'zh' }" @click="setLang('zh')">中文</button>
           <button :class="{ on: i18n.lang === 'en' }" @click="setLang('en')">English</button>
@@ -141,10 +140,9 @@ onUnmounted(() => {
       </div>
     </nav>
 
-    <div class="theme-switch desk-theme" :title="t('Theme / 语言')">
-      <button :class="{ on: theme.pref === 'light' }" @click="setTheme('light')">☀️</button>
-      <button :class="{ on: theme.pref === 'dark' }" @click="setTheme('dark')">🌙</button>
-      <button :class="{ on: i18n.lang === 'zh' }" @click="toggleLang">{{ i18n.lang === 'zh' ? '中' : 'EN' }}</button>
+    <div class="desk-theme appearance-controls">
+      <ThemeSwitch compact />
+      <button class="ghost lang-toggle" :title="t('切换语言')" :aria-label="t('切换语言')" @click="toggleLang">{{ i18n.lang === 'zh' ? '中' : 'EN' }}</button>
     </div>
 
     <div class="user-area" v-if="store.ok" @click.stop>
@@ -173,7 +171,7 @@ onUnmounted(() => {
     <button v-else class="ghost login-btn" @click="go('login')">{{ t('登录') }}</button>
   </header>
 
-  <main class="wrap">
+  <main class="wrap" :class="{ 'gallery-wrap': route === 'gallery' && !isLocked && !authPending }">
     <div v-if="authPending" class="lockbox" role="status">{{ t('正在验证登录…') }}</div>
     <LockGate v-else-if="isLocked" :server-error="store.authError === 'server'" />
     <component v-else :is="views[route]" />
@@ -184,6 +182,8 @@ onUnmounted(() => {
     <p v-if="site.copyright_notice" class="copyright-notice">{{ site.copyright_notice }}</p>
     <p v-if="site.copyright_contact" class="copyright-contact">{{ t('联系方式') }}：{{ site.copyright_contact }}</p>
   </footer>
+
+  <ScrollControls />
 
   <div v-if="authNotice" class="auth-notice" @click="authNotice = ''">
     {{ authNotice }}

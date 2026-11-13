@@ -62,6 +62,34 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
+/* Hide the outer page track; wheel, touch and keyboard scrolling still work.
+   Nested form fields and tables retain their own scrollbars. */
+html { scrollbar-width: none; }
+html::-webkit-scrollbar { display: none; width: 0; height: 0; }
+html::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+.scroll-controls {
+  position: fixed;
+  right: max(18px, env(safe-area-inset-right));
+  bottom: max(24px, env(safe-area-inset-bottom));
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.scroll-controls button.ghost {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--surface-solid);
+  box-shadow: var(--shadow);
+}
+.scroll-controls button:disabled { opacity: .4; }
+@media (max-width: 768px) {
+  .scroll-controls { right: max(12px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); gap: 6px; }
+}
 body {
   font-family: -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
   background: var(--grad-bg) fixed;
@@ -137,6 +165,8 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
   backdrop-filter: blur(14px);
 }
 .topbar .logo {
+  min-width: 0;
+  max-width: clamp(160px, 25vw, 360px);
   font-weight: 500;
   font-size: 17px;
   color: var(--accent);
@@ -151,7 +181,7 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
   border-radius: 5px;
   flex: none;
 }
-.topbar .logo span { background: inherit; -webkit-background-clip: text; background-clip: text; }
+.topbar .logo span { background: inherit; -webkit-background-clip: text; background-clip: text; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .topbar nav { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; }
 .topbar nav a {
   padding: 5px 13px;
@@ -174,6 +204,11 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
   padding: 3px;
 }
 .theme-switch button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
   background: none;
   color: var(--muted);
   padding: 4px 10px;
@@ -183,6 +218,9 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
 }
 .theme-switch button:hover { transform: none; box-shadow: none; }
 .theme-switch button.on { background: var(--grad-accent); color: var(--on-accent); }
+.appearance-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.lang-toggle { min-width: 36px; min-height: 36px; padding: 5px 8px; border-radius: 999px; font-size: 13px; }
+.theme-switch svg { flex-shrink: 0; }
 .auth-badge {
   display: flex; align-items: center; gap: 6px;
   font-size: 12.5px; color: var(--muted);
@@ -195,6 +233,22 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
 
 /* ============ 布局 ============ */
 .wrap { max-width: 1150px; margin: 0 auto; padding: 26px 28px 60px; width: 100%; }
+.wrap.gallery-wrap { max-width: none; padding-inline: clamp(12px, 2.5vw, 96px); }
+.about-page { max-width: 920px; margin: 12px auto; }
+.about-header { display: flex; align-items: center; gap: 16px; }
+.about-header h1 { margin: 2px 0 0; font-size: clamp(24px, 4vw, 32px); font-weight: 600; }
+.about-eyebrow { margin: 0; color: var(--accent); font-size: 14px; }
+.about-lead { margin: 26px 0; font-size: 18px; line-height: 1.8; }
+.about-features { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.about-features article, .about-repository { padding: 22px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.about-page h2 { font-size: 17px; font-weight: 500; margin: 0 0 12px; }
+.about-page p { line-height: 1.8; }
+.about-features p { margin: 0; color: var(--muted); font-size: 14px; }
+.about-repository { margin-top: 20px; }
+.about-repo-address { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
+.about-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
+.about-primary { background: var(--grad-accent); color: var(--on-accent); }
+.about-note { font-size: 13px; margin-top: 24px; }
 .site-footer {
   text-align: center;
   padding: 22px;
@@ -716,6 +770,7 @@ button.danger { color: var(--err); }
   /* ---------- 顶栏：折叠成汉堡菜单 ---------- */
   .topbar { padding: 8px 12px; gap: 8px; background: var(--surface-solid); backdrop-filter: none; }
   .topbar .logo {
+    max-width: none;
     flex: 1;
     min-width: 0;
     font-size: 16px;
@@ -750,7 +805,7 @@ button.danger { color: var(--err); }
     border-top: 0.5px solid var(--border);
   }
   .nav-mobile .theme-switch { display: flex; }
-  .nav-mobile .theme-switch button { flex: 1; font-size: 13px; padding: 8px 0; }
+  .nav-mobile .theme-switch button { flex: 1; min-height: 44px; font-size: 13px; padding: 8px 0; }
 
   /* 用户区：只留头像，菜单铺满屏宽 */
   .user-area { order: 2; }
@@ -762,6 +817,10 @@ button.danger { color: var(--err); }
 
   /* ---------- 布局 ---------- */
   .wrap { padding: 14px 12px 44px; }
+  .wrap.gallery-wrap { padding-inline: 12px; }
+  .about-features { grid-template-columns: 1fr; gap: 12px; }
+  .about-features article, .about-repository { padding: 18px; }
+  .about-lead { font-size: 16px; }
   .page-title { font-size: 20px; }
 
   /* ---------- 画廊：三档尺寸在手机上分别是 3 / 2 / 1 列 ---------- */
