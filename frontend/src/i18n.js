@@ -8,6 +8,12 @@ export const i18n = reactive({
 })
 
 const EN = {
+  '账户菜单': 'Account menu', '关闭配置菜单': 'Close settings menu',
+  '站点设置': 'Site settings', '图片管理': 'Image management', '账号安全': 'Accounts & security', '消息接入': 'Notifications', '开发工具': 'Developer tools',
+  '站点外观': 'Appearance', '访问分享': 'Access & sharing', '版权联系': 'Copyright & contact',
+  '图片压缩': 'Compression', '图库维护': 'Library maintenance', '备份恢复': 'Backup & restore',
+  '登录设置': 'Sign-in settings', '流量限制': 'Rate limits', '登录防护': 'Sign-in protection', '封禁名单': 'Bans & lists',
+  '事件通知': 'Event notifications', '电报接入': 'Telegram integration', '接口文档': 'API documentation',
   '页面滚动': 'Page scrolling', '回到顶部': 'Back to top', '前往底部': 'Go to bottom',
   '关于': 'About', '关于项目': 'About this project', '主题': 'Theme', '切换语言': 'Switch language',
   '轻量、自部署的图片画廊与随机图服务，让图片管理更简单。': 'A lightweight, self-hosted gallery and random image service that makes managing images simpler.',

@@ -23,8 +23,14 @@ const views = {
 // 需要登录的页面
 const locked = { random: true, upload: true, admin: true }
 const route = ref('gallery')
-const menuOpen = ref(false)        // 用户下拉
-const navOpen = ref(false)         // 手机端汉堡菜单
+// A single state prevents the account and navigation panels opening together.
+const openMenu = ref(null)
+const menuOpen = computed(() => openMenu.value === 'user')
+const navOpen = computed(() => openMenu.value === 'nav')
+const navTrigger = ref(null)
+const userTrigger = ref(null)
+function closeMenus() { openMenu.value = null }
+function toggleMenu(name) { openMenu.value = openMenu.value === name ? null : name }
 const pwdOpen = ref(false)
 const pwdMsg = ref('')
 const pwdBusy = ref(false)
@@ -52,11 +58,11 @@ const usedPct = computed(() => {
 
 function go(r) {
   location.hash = `#/${r}`
-  menuOpen.value = false
-  navOpen.value = false
+  closeMenus()
 }
 
 function sync() {
+  closeMenus()
   const h = location.hash.replace(/^#\/?/, '') || 'gallery'
   const next = views[h] ? h : 'gallery'
   if (next !== route.value) {
@@ -67,7 +73,7 @@ function sync() {
 
 async function logout() {
   await doLogout()
-  menuOpen.value = false
+  closeMenus()
   go('gallery')
 }
 
@@ -88,7 +94,13 @@ function toggleLang() {
   setLang(i18n.lang === 'zh' ? 'en' : 'zh')
 }
 
-function onDocClick() { menuOpen.value = false; navOpen.value = false }
+function onDocClick() { closeMenus() }
+function onKeydown(event) {
+  if (event.key !== 'Escape' || !openMenu.value) return
+  const trigger = openMenu.value === 'nav' ? navTrigger.value : userTrigger.value
+  closeMenus()
+  trigger?.focus()
+}
 
 // 当前是否还持有 token（401 回调里用来区分「会话过期」和「密码输错」）
 function readTokenExists() {
@@ -99,6 +111,7 @@ onMounted(() => {
   sync()
   window.addEventListener('hashchange', sync)
   document.addEventListener('click', onDocClick)
+  document.addEventListener('keydown', onKeydown)
   loadSite()
   // 任意请求返回 401 → 提示并回到未登录态（登录页输错密码不算）
   setUnauthHandler(() => {
@@ -111,6 +124,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('hashchange', sync)
   document.removeEventListener('click', onDocClick)
+  document.removeEventListener('keydown', onKeydown)
 })
 </script>
 
@@ -121,10 +135,10 @@ onUnmounted(() => {
       <span>{{ site.site_title }}</span>
     </span>
 
-    <button class="hamburger" :aria-expanded="navOpen" :aria-label="t('菜单')"
-      @click.stop="navOpen = !navOpen">{{ navOpen ? '✕' : '☰' }}</button>
+    <button ref="navTrigger" class="hamburger" :aria-expanded="navOpen" :aria-label="t('菜单')" aria-controls="site-navigation"
+      @click.stop="toggleMenu('nav')">{{ navOpen ? '✕' : '☰' }}</button>
 
-    <nav @click="navOpen = false">
+    <nav id="site-navigation" @click="closeMenus">
       <a href="#/gallery" :class="{ active: route === 'gallery' }">{{ t('画廊') }}</a>
       <a href="#/random" :class="{ active: route === 'random' }">{{ t('随机图') }}</a>
       <a href="#/upload" :class="{ active: route === 'upload' }">{{ t('上传') }}</a>
@@ -146,14 +160,14 @@ onUnmounted(() => {
     </div>
 
     <div class="user-area" v-if="store.ok" @click.stop>
-      <button class="user-chip" @click="menuOpen = !menuOpen">
+      <button ref="userTrigger" class="user-chip" :aria-expanded="menuOpen" :aria-label="t('账户菜单')" aria-controls="account-menu" @click="toggleMenu('user')">
         <span class="avatar">{{ (store.user?.username || '?')[0].toUpperCase() }}</span>
         <span class="uname">{{ store.user?.username }}</span>
         <span class="role-badge" v-if="isAdmin">{{ t('管理员') }}</span>
         <span class="role-badge user" v-else>{{ t('用户') }}</span>
         <span class="caret">▾</span>
       </button>
-      <div class="user-menu" v-if="menuOpen">
+      <div id="account-menu" class="user-menu" v-if="menuOpen">
         <div class="um-head">
           <div class="um-name">{{ store.user?.username }}</div>
           <div class="um-quota" v-if="store.user?.quotaMb">
@@ -162,9 +176,8 @@ onUnmounted(() => {
           </div>
           <div class="um-quota" v-else>{{ t('不限容量') }} · {{ store.user?.imageCount || 0 }} {{ t('张') }}</div>
         </div>
-        <button @click="go('upload'); menuOpen = false">⬆️ {{ t('上传') }}</button>
-        <button @click="go('admin'); menuOpen = false">⚙️ {{ isAdmin ? t('后台管理') : t('我的空间') }}</button>
-        <button @click="pwdOpen = true; menuOpen = false">🔑 {{ t('修改密码') }}</button>
+        <button @click="go('admin')">⚙️ {{ isAdmin ? t('后台管理') : t('我的空间') }}</button>
+        <button @click="pwdOpen = true; closeMenus()">🔑 {{ t('修改密码') }}</button>
         <button class="danger" @click="logout">🚪 {{ t('退出登录') }}</button>
       </div>
     </div>

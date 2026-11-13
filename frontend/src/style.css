@@ -103,6 +103,8 @@ body {
 main.wrap { flex: 1; }
 
 a { color: var(--accent-2); text-decoration: none; }
+/* Suppress double-tap zoom on controls, while keeping pinch zoom available. */
+button, a, [role='button'] { touch-action: manipulation; }
 button {
   font: inherit;
   white-space: nowrap;
@@ -153,6 +155,7 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
 
 /* ============ 顶栏 ============ */
 .topbar {
+  touch-action: manipulation;
   display: flex;
   align-items: center;
   gap: 18px;
@@ -451,7 +454,12 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
 /* ============ 树形后台（komari 风格） ============ */
 .admin-layout { display: flex; gap: 26px; align-items: flex-start; }
 .admin-tree {
-  min-width: 212px;
+  flex: 0 0 224px;
+  width: 224px;
+  min-width: 0;
+  max-height: calc(100dvh - 110px);
+  overflow-y: auto;
+  scrollbar-width: thin;
   border: 0.5px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
@@ -469,7 +477,10 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
   letter-spacing: 0.08em;
 }
 .admin-tree .item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
   width: 100%;
   text-align: left;
   background: none;
@@ -480,6 +491,8 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
   box-shadow: none;
   font-size: 14px;
 }
+.admin-menu-icon { flex: 0 0 20px; width: 20px; display: inline-flex; align-items: center; justify-content: center; font-size: 17px; }
+.admin-menu-label { min-width: 0; line-height: 1.35; overflow-wrap: anywhere; }
 .admin-tree .item:hover { background: var(--surface-hover); transform: none; box-shadow: none; }
 .admin-tree .item.on { background: var(--grad-accent); color: var(--on-accent); }
 
@@ -778,7 +791,7 @@ button.danger { color: var(--err); }
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .hamburger { display: inline-flex; order: 3; }
+  .hamburger { display: inline-flex; order: 3; width: 44px; height: 44px; }
   .desk-theme { display: none; }
   .topbar nav { display: none; }
   .topbar.open nav {
@@ -794,7 +807,7 @@ button.danger { color: var(--err); }
     background: var(--surface-solid);
     border-bottom: 0.5px solid var(--border);
     box-shadow: var(--shadow);
-    max-height: calc(100vh - 58px);
+    max-height: calc(100dvh - 61px);
     overflow-y: auto;
   }
   .topbar.open nav a { padding: 11px 14px; border-radius: 7px; font-size: 15px; }
@@ -808,12 +821,12 @@ button.danger { color: var(--err); }
   .nav-mobile .theme-switch button { flex: 1; min-height: 44px; font-size: 13px; padding: 8px 0; }
 
   /* 用户区：只留头像，菜单铺满屏宽 */
-  .user-area { order: 2; }
-  .user-chip { padding: 4px; gap: 3px; }
+  .user-area { order: 2; position: static; flex-shrink: 0; }
+  .user-chip { padding: 4px; gap: 3px; min-width: 44px; height: 44px; justify-content: center; }
   .user-chip .uname, .user-chip .role-badge { display: none; }
-  .user-menu { position: fixed; left: 8px; right: 8px; top: 54px; min-width: 0; }
+  .user-menu { position: absolute; left: 12px; right: 12px; top: calc(100% + 4px); min-width: 0; max-height: calc(100dvh - 80px); overflow-y: auto; }
   .user-menu button { padding: 12px; }
-  .login-btn { order: 2; padding: 6px 14px; }
+  .login-btn { order: 2; padding: 6px 14px; min-height: 44px; }
 
   /* ---------- 布局 ---------- */
   .wrap { padding: 14px 12px 44px; }
@@ -879,7 +892,7 @@ button.danger { color: var(--err); }
     left: 0;
     top: 0;
     bottom: 0;
-    width: min(78vw, 300px);
+    width: min(88vw, 300px);
     min-width: 0;
     max-height: none;
     display: flex;
@@ -894,10 +907,11 @@ button.danger { color: var(--err); }
     background: var(--surface-solid);
     z-index: 80;
     transform: translateX(-105%);
+    visibility: hidden;
     transition: transform 0.25s ease;
     padding-bottom: calc(16px + env(safe-area-inset-bottom));
   }
-  .admin-tree.open { transform: translateX(0); box-shadow: var(--shadow); }
+  .admin-tree.open { transform: translateX(0); visibility: visible; box-shadow: var(--shadow); }
   .admin-tree-head {
     display: flex;
     align-items: center;
@@ -911,6 +925,8 @@ button.danger { color: var(--err); }
     z-index: 1;
   }
   .admin-tree-close {
+    min-width: 44px;
+    min-height: 44px;
     background: none;
     color: var(--muted);
     padding: 6px 10px;
@@ -1194,7 +1210,6 @@ button.danger { color: var(--err); }
 @media (max-width: 420px) {
   .stats-cards { grid-template-columns: 1fr 1fr; }
   .profile-grid { grid-template-columns: 1fr; }
-  .admin-tree { width: 84vw; }
   .admin-tree .item { font-size: 14px; padding: 11px 12px; }
 }
 
