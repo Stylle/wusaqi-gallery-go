@@ -77,10 +77,6 @@ onUnmounted(() => { emit('testing', false); alive = false; clearInterval(poll); 
       <input id="telegram-token" v-model="settings.telegram_bot_token" type="password" autocomplete="new-password" spellcheck="false" :placeholder="t(status?.configured ? 'Token 已保存，留空保留' : '填入 BotFather 提供的 Token')" />
       <span class="hint">{{ t('在 Telegram 的 BotFather 创建 Bot。Token 仅用于服务器出站请求，保存后不会回显。') }} <a href="https://core.telegram.org/bots/features#creating-a-new-bot" target="_blank" rel="noopener noreferrer">{{ t('创建说明') }}</a></span>
     </div>
-    <div class="field">
-      <label class="check-line"><input type="checkbox" :checked="settings.telegram_include_private === '1'" @change="settings.telegram_include_private = $event.target.checked ? '1' : '0'" />{{ t('允许通过 Telegram 获取私密标签图片') }}</label>
-      <span class="hint">{{ t('默认关闭。开启后须明确发送 /random 私密；不带参数始终排除私密图。图片会上传至 Telegram，已发送的内容无法通过站点开关撤回。') }}</span>
-    </div>
     <div class="row form-actions">
       <button :disabled="saving || busy" @click="emit('save')">{{ t(saving ? '保存中…' : '保存全部设置') }}</button>
       <span class="msg-line" :class="{ bad: messageBad }" role="status">{{ message || (dirty ? t('有未保存的修改') : '') }}</span>
@@ -115,6 +111,15 @@ onUnmounted(() => { emit('testing', false); alive = false; clearInterval(poll); 
       </ul>
       <p v-else-if="status" class="muted">{{ t('暂无已绑定管理员') }}</p>
       <p class="hint muted">{{ t('停用、删除或降级站点管理员会立即停止其机器人权限。关闭公开访问或外链不影响已绑定管理员取图。') }}</p>
+    </section>
+
+    <section class="telegram-section">
+      <h3>{{ t('机器人设置') }}</h3>
+    <div class="field">
+      <label class="check-line"><input type="checkbox" :checked="settings.telegram_include_private === '1'" @change="settings.telegram_include_private = $event.target.checked ? '1' : '0'" />{{ t('允许通过 Telegram 获取私密标签图片') }}</label>
+      <span class="hint">{{ t('默认关闭。开启后须明确发送 /random 私密；不带参数始终排除私密图。图片会上传至 Telegram，已发送的内容无法通过站点开关撤回。') }}</span>
+    </div>
+      <div class="row"><button :disabled="saving || busy" @click="emit('save')">{{ t('保存设置') }}</button></div>
     </section>
 
     <section class="telegram-section">
