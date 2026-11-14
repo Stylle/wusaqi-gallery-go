@@ -35,20 +35,6 @@
       "source": "server/internal/integrationtest/binding.go",
       "mirrors": [],
       "sha256": "5ce823568208d24b2bf84152d9f112f1e272e6c8c3e8e1cfecabf9db8b9af9fc"
-    },
-    {
-      "name": "telegram-binding-style",
-      "version": "2026-11-15",
-      "source": "frontend/src/components/binding-panel.css",
-      "mirrors": [],
-      "sha256": "388f415ec24e2b0124598d6d31a0e28b3bb24c135e96738749b7c78ccad7bdff"
-    },
-    {
-      "name": "telegram-binding-panel",
-      "version": "2026-11-15",
-      "source": "frontend/src/components/BotBindingPanel.vue",
-      "mirrors": [],
-      "sha256": "a7e0ddea1f7d7fce0324a8139bc6076b27cf7119a7194537c2868a791a476cdd"
     }
   ]
 }

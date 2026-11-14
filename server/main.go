@@ -231,7 +231,7 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case p == "/api/health" && m == "GET":
 		a.count("SELECT 1")
-		respond(w, M{"ok": true, "version": "1.2.0"})
+		respond(w, M{"ok": true, "version": "1.2.1"})
 	case p == "/api/public/settings" && m == "GET":
 		s := a.settings()
 		out := M{}

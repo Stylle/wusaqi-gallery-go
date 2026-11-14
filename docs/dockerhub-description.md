@@ -90,6 +90,8 @@ docker compose up -d
 
 容器默认先检查专用 data 挂载，再以 UID/GID 10001 启动 Go 和图片处理进程，仍使用内部端口 80。入口拒绝链接、嵌套挂载及非专用目录；NAS ACL、只读挂载或 root-squash 无法自动绕过。自定义非 root 运行时跳过初始化，需自行保证目录权限。
 
-## 通知配置
+Webhook 测试使用当前表单，无需先保存；测试不保存、不启用配置。详见 [连接与通知测试](https://github.com/Stylle/wusaqi-gallery-go/blob/main/docs/integration-tests.md)。
 
-Telegram（固件除外）：填写 Token、保存设置、生成绑定码，在机器人私聊发送 `/bind 绑定码`。五分钟有效、一次使用；无需 Chat ID 或测试消息。自动注册原有业务命令菜单。固件保留 Webhook/MQTT，取消 Telegram 通知。Webhook 和飞牛（如有）可直接测试当前表单，不会保存配置。原有用户和项目权限不变。
+## 通知绑定与连接测试
+
+Telegram 采用「Token → 保存 → 生成绑定码 → 私聊 `/bind`」统一流程，自动注册机器人菜单，无需手填 Chat ID 或发送测试消息。Webhook 支持直接测试当前表单而不保存。电报接入保留原有设置、管理员绑定及指令说明布局，状态自动刷新。详见 [配置说明](https://github.com/Stylle/wusaqi-gallery-go/blob/main/docs/integration-tests.md)。
