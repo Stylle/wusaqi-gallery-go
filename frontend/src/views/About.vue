@@ -24,6 +24,7 @@ const repository = 'https://github.com/Stylle/wusaqi-gallery-go'
         <a class="link-button" :href="repository + '/blob/main/docs/guide.md'" target="_blank" rel="noopener noreferrer">{{ t('使用与部署指南') }} ↗</a>
       </div>
     </section>
+    <p>v1.1.0 · © 2026 Wusaqi Gallery contributors · <a :href="repository + '/blob/main/LICENSE'" target="_blank" rel="noopener noreferrer">MIT License</a></p>
     <p class="about-note muted">{{ t('项目使用 Go、Vue 3 与 SQLite 构建，支持 Docker 单容器部署。站点内容及图片由部署者管理。') }}</p>
   </section>
 </template>

@@ -1,8 +1,9 @@
 import { reactive, watch } from 'vue'
+import { readStorage, writeStorage } from './storage.js'
 
 // 主题三态：light / dark / system（跟随系统）
 export const theme = reactive({
-  pref: ['light', 'dark', 'system'].includes(localStorage.getItem('lg_theme')) ? localStorage.getItem('lg_theme') : 'system',
+  pref: ['light', 'dark', 'system'].includes(readStorage('localStorage', 'lg_theme')) ? readStorage('localStorage', 'lg_theme') : 'system',
   resolved: 'light',
 })
 
@@ -17,7 +18,7 @@ function apply() {
 export function setTheme(pref) {
   if (!['light', 'dark', 'system'].includes(pref)) return
   theme.pref = pref
-  localStorage.setItem('lg_theme', pref)
+  writeStorage('localStorage', 'lg_theme', pref)
   apply()
 }
 

@@ -16,3 +16,7 @@ server/gallery-next.exe
 artifacts/
 .venv/
 .qa-data/
+
+/.browser-qa/
+
+/build/

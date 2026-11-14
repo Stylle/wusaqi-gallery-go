@@ -5,7 +5,7 @@ import re
 root = Path(__file__).resolve().parents[1]
 text = (root / "README.md").read_text(encoding="utf-8")
 base = "https://github.com/Stylle/wusaqi-gallery-go/blob/main/"
-text = re.sub(r"\]\(((?:docs/|scripts/)[^)]+|docker-compose(?:\.(?:hub|minimal))?\.yml)\)",
+text = re.sub(r"\]\(((?:docs/|scripts/)[^)]+|docker-compose(?:\.(?:hub|minimal))?\.yml|LICENSE)\)",
               lambda m: "](" + base + m[1] + ")", text)
 # Hub limits the UTF-8 payload to 25,000 bytes, rather than 25,000 characters.
 # Keep all deployment/features/privacy content; link to the full development

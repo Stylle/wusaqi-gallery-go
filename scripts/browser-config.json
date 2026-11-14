@@ -1,0 +1,7 @@
+{
+  "kind": "gallery",
+  "binary": "server/gallery",
+  "health": "/api/health",
+  "route": "/#/login",
+  "form": ".login-card"
+}

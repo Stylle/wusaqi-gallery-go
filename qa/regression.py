@@ -188,8 +188,11 @@ def suite(data):
         check("visit statistics and yesterday uploads", len(stats["days"]) == 3 and stats["library"]["count"] == 83 and stats["yesterday"]["uploads"] == 0)
         check("wrong old password keeps session valid", call("POST", "/api/auth/password", {"old": "wrong", "new": "qa-new-pass"}, token)[0] == 401 and call("GET", "/api/auth/me", token=token)[0] == 200)
         check("change password succeeds", call("POST", "/api/auth/password", {"old": "qa-pass-123", "new": "qa-new-pass"}, token)[0] == 200)
+        check("password change revokes old session", call("GET", "/api/auth/me", token=token)[0] == 401)
         check("new password authenticates", call("POST", "/api/auth/login", {"username": "owner", "password": "qa-new-pass"})[0] == 200)
+        token = call("POST", "/api/auth/login", {"username": "owner", "password": "qa-new-pass"})[1]["token"]
         call("POST", "/api/auth/password", {"old": "qa-new-pass", "new": "qa-pass-123"}, token)
+        token = call("POST", "/api/auth/login", {"username": "owner", "password": "qa-pass-123"})[1]["token"]
         check("legacy IDs and ownership migrate", login["user"]["id"] == "legacy-admin" and login["user"]["imageCount"] == 83)
         check("empty tags hidden despite configured pool", call("GET", "/api/tags")[1]["tags"] == [])
         for path in ("/api/admin/upload", "/api/admin/reindex", "/api/admin/verify", "/api/unused"):

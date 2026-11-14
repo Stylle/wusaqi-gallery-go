@@ -38,7 +38,9 @@ func (a *App) walkPending(visit func(M) bool) int {
 			return e
 		}
 		if d.IsDir() {
-			if strings.HasPrefix(d.Name(), ".") { return filepath.SkipDir }
+			if strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		scanned++

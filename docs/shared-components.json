@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "components": [
+    {
+      "name": "theme",
+      "version": "2026-11-14",
+      "source": "frontend/src/style.css",
+      "mirrors": [],
+      "sha256": "b7c00df218c4302e5c93d23baccc6c8186cfbc555bcb3b767ed699bcece9bd15"
+    },
+    {
+      "name": "navigation-icons",
+      "version": "2026-11-14",
+      "source": "frontend/src/components/UiIcon.vue",
+      "mirrors": [],
+      "sha256": "e20a163360270add599334ab79b8d6f833d3ab1c98cf103da9ccb75ac3bfad42"
+    }
+  ]
+}

@@ -19,6 +19,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags=
 # supervisor, or idle image worker is started in the running container.
 FROM python:3.13-slim
 WORKDIR /app
+LABEL org.opencontainers.image.source="https://github.com/Stylle/wusaqi-gallery-go" org.opencontainers.image.licenses="MIT"
 COPY backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/image_worker.py backend/image_metadata.py ./

@@ -73,7 +73,7 @@ func (a *App) setMediaCookie(w http.ResponseWriter, r *http.Request) {
 	if s == nil {
 		return
 	}
-	c := &http.Cookie{Name: mediaCookie, Value: token, Path: "/media/", HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil}
+	c := &http.Cookie{Name: mediaCookie, Value: token, Path: "/media/", HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: requestHTTPS(r)}
 	if num(s["remember"]) == 1 {
 		c.Expires, _ = time.Parse(time.RFC3339, str(s["expires_at"]))
 	}
@@ -90,7 +90,7 @@ func (a *App) setViewerCookie(w http.ResponseWriter, r *http.Request, s map[stri
 	}
 	exp := strconv.FormatInt(time.Now().Add(12*time.Hour).Unix(), 10)
 	value := exp + "." + viewerSignature(exp, s["_viewer_secret"])
-	http.SetCookie(w, &http.Cookie{Name: viewerCookie, Value: value, Path: "/media/", MaxAge: 43200, HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil})
+	http.SetCookie(w, &http.Cookie{Name: viewerCookie, Value: value, Path: "/media/", MaxAge: 43200, HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: requestHTTPS(r)})
 }
 func validViewer(r *http.Request, s map[string]string) bool {
 	c, err := r.Cookie(viewerCookie)

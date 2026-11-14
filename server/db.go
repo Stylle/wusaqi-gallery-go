@@ -241,7 +241,7 @@ func (a *App) initDB(syncAdmin bool) {
 		if a.one("SELECT id FROM users WHERE username=? AND id!=?", name, admin["id"]) == nil {
 			fields["username"] = name
 		}
-		a.update("users", "id", admin["id"], fields)
+		a.updateAccount(admin["id"], fields)
 	}
 	a.exec("UPDATE images SET owner_id=? WHERE owner_id IS NULL", admin["id"])
 	a.exec("UPDATE users SET enabled=1 WHERE enabled IS NULL")

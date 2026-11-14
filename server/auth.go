@@ -88,7 +88,8 @@ func (a *App) authRoute(w http.ResponseWriter, r *http.Request) {
 		if !verify(str(v["old"]), str(u["pwd"])) {
 			fail(401, "原密码错误")
 		}
-		a.update("users", "id", u["id"], M{"pwd": password(pw)})
+		a.updateAccount(u["id"], M{"pwd": password(pw)})
+		http.SetCookie(w, &http.Cookie{Name: mediaCookie, Path: "/media/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 		respond(w, M{"ok": true})
 	default:
 		notFound()
@@ -231,7 +232,7 @@ func (a *App) usersRoute(w http.ResponseWriter, r *http.Request) {
 			}
 			f["pwd"] = password(pw)
 		}
-		a.update("users", "id", uid, f)
+		a.updateAccount(uid, f)
 		a.telegram.changed()
 		respond(w, M{"ok": true, "user": a.publicUser(a.one("SELECT * FROM users WHERE id=?", uid))})
 		return
@@ -259,4 +260,27 @@ func (a *App) usersRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	notFound()
+}
+
+// Keep password replacement and revocation atomic, including administrator resets.
+func (a *App) updateAccount(uid any, fields M) {
+	if len(fields) == 0 {
+		return
+	}
+	tx, e := a.db.Begin()
+	must(e)
+	defer tx.Rollback()
+	set, args := []string{}, []any{}
+	for k, v := range fields {
+		set = append(set, k+"=?")
+		args = append(args, v)
+	}
+	args = append(args, uid)
+	_, e = tx.Exec("UPDATE users SET "+strings.Join(set, ",")+" WHERE id=?", args...)
+	must(e)
+	if _, changed := fields["pwd"]; changed {
+		_, e = tx.Exec("DELETE FROM sessions WHERE user_id=?", uid)
+		must(e)
+	}
+	must(tx.Commit())
 }

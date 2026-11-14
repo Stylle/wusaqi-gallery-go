@@ -21,3 +21,6 @@ server/gallery-review.exe
 server/gallery-next.exe
 .env
 .env.*
+
+.browser-qa
+build

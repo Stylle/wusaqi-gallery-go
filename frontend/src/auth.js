@@ -1,6 +1,8 @@
 import { reactive, computed } from 'vue'
 import * as api from './api.js'
 import { setSite } from './site.js'
+import { readStorage, writeStorage, removeStorage } from './storage.js'
+let tokenOverride = null
 
 // 登录态
 export const store = reactive({
@@ -14,43 +16,45 @@ export const store = reactive({
 // 关键：模块加载时就把 token 读出来（同步）。
 // 子组件（如后台 Admin）的 onMounted 早于 App 的 onMounted，
 // 若等 checkAuth() 再赋值，首屏发出的请求会带着空 token → 401 "login required"。
-store.token = localStorage.getItem('lg_token') || sessionStorage.getItem('lg_token') || ''
+store.token = readToken()
 
 // 界面状态（画廊筛选 / 尺寸档位）
 export const ui = reactive({
   activeTag: '',
   onlyMine: false,
   showPrivate: false,
-  viewSize: localStorage.getItem('lg_size') || 'm',
+  viewSize: readStorage('localStorage', 'lg_size', 'm'),
 })
 
 export const isAdmin = computed(() => store.user?.role === 'admin')
 
 export function setViewSize(s) {
   ui.viewSize = s
-  localStorage.setItem('lg_size', s)
+  writeStorage('localStorage', 'lg_size', s)
 }
 
 // ---------- token 存取：勾「记住我」→ localStorage(长效)，否则 sessionStorage(关浏览器失效) ----------
 export function readToken() {
-  return localStorage.getItem('lg_token') || sessionStorage.getItem('lg_token') || ''
+  return tokenOverride ?? (readStorage('localStorage', 'lg_token') || readStorage('sessionStorage', 'lg_token'))
 }
 
 export function setToken(t, remember) {
   store.token = t
+  tokenOverride = t
   authPromise = null          // 新 token → 重新校验
   if (remember) {
-    localStorage.setItem('lg_token', t)
-    sessionStorage.removeItem('lg_token')
+    writeStorage('localStorage', 'lg_token', t)
+    removeStorage('sessionStorage', 'lg_token')
   } else {
-    sessionStorage.setItem('lg_token', t)
-    localStorage.removeItem('lg_token')
+    writeStorage('sessionStorage', 'lg_token', t)
+    removeStorage('localStorage', 'lg_token')
   }
 }
 
 export function clearToken() {
-  localStorage.removeItem('lg_token')
-  sessionStorage.removeItem('lg_token')
+  tokenOverride = ''
+  removeStorage('localStorage', 'lg_token')
+  removeStorage('sessionStorage', 'lg_token')
   store.token = ''
   store.user = null
   store.ok = false

@@ -10,7 +10,7 @@ import ThemeSwitch from './components/ThemeSwitch.vue'
 import ScrollControls from './components/ScrollControls.vue'
 import LockGate from './components/LockGate.vue'
 import {
-  store, ui, isAdmin, ensureAuth, loadSite, doLogout, setViewSize, clearToken,
+  store, ui, isAdmin, ensureAuth, loadSite, doLogout, setViewSize, clearToken, readToken,
 } from './auth.js'
 import { site } from './site.js'
 import { changePassword, fmtSize, setUnauthHandler } from './api.js'
@@ -83,7 +83,9 @@ async function submitPwd() {
   pwdMsg.value = t('提交中…')
   try {
     await changePassword(store.token, pwdForm.value.old, pwdForm.value.new)
-    pwdMsg.value = t('密码已修改 ✓')
+    clearToken()
+    pwdOpen.value = false
+    go('login')
     pwdForm.value = { old: '', new: '' }
   } catch (e) {
     pwdMsg.value = t('失败：') + e.message
@@ -104,7 +106,7 @@ function onKeydown(event) {
 
 // 当前是否还持有 token（401 回调里用来区分「会话过期」和「密码输错」）
 function readTokenExists() {
-  return !!(localStorage.getItem('lg_token') || sessionStorage.getItem('lg_token') || store.token)
+  return !!(readToken() || store.token)
 }
 
 onMounted(() => {

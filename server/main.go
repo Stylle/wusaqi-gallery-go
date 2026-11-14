@@ -17,11 +17,13 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
 
 type App struct {
+	restorePending            atomic.Bool
 	db                        *sql.DB
 	data, web, worker, python string
 	defaults                  map[string]string
@@ -45,6 +47,7 @@ type App struct {
 
 func newApp(data, web string) *App {
 	must(os.MkdirAll(data, 0755))
+	must(applyGalleryRestore(data))
 	for _, d := range []string{"uploads", "thumbs", "compressed"} {
 		must(os.MkdirAll(filepath.Join(data, d), 0755))
 	}
@@ -112,6 +115,9 @@ func (a *App) recoverRequest(w http.ResponseWriter, r *http.Request) {
 }
 func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer a.recoverRequest(w, r)
+	if a.restorePending.Load() {
+		fail(503, "恢复尚未完成，请检查磁盘权限后重启服务；勿重复导入")
+	}
 	if strings.HasPrefix(r.URL.Path, "/api/") {
 		// Preserve the original API's cross-origin contract for external clients.
 		if r.Header.Get("Origin") != "" {
@@ -225,7 +231,7 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case p == "/api/health" && m == "GET":
 		a.count("SELECT 1")
-		respond(w, M{"ok": true})
+		respond(w, M{"ok": true, "version": "1.1.0"})
 	case p == "/api/public/settings" && m == "GET":
 		s := a.settings()
 		out := M{}

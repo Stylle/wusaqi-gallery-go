@@ -2,11 +2,12 @@ package main
 
 import (
 	"archive/zip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -50,7 +51,18 @@ func (a *App) backupStats() M {
 	}
 	return M{"db_bytes": dbBytes, "dirs": dirs, "counts": a.counts(), "data_dir": a.data, "total_bytes": total}
 }
-func zipFile(z *zip.Writer, full, name string) error {
+
+type backupFile struct {
+	Size   int64
+	SHA256 string
+}
+type galleryManifest struct {
+	App    string                `json:"app"`
+	Format int                   `json:"format"`
+	Files  map[string]backupFile `json:"files"`
+}
+
+func zipFile(z *zip.Writer, full, name string, files map[string]backupFile) error {
 	f, e := os.Open(full)
 	if e != nil {
 		return e
@@ -70,7 +82,11 @@ func zipFile(z *zip.Writer, full, name string) error {
 	if e != nil {
 		return e
 	}
-	_, e = io.Copy(out, f)
+	hash := sha256.New()
+	n, e := io.Copy(io.MultiWriter(out, hash), f)
+	if e == nil {
+		files[name] = backupFile{n, hex.EncodeToString(hash.Sum(nil))}
+	}
 	return e
 }
 func (a *App) downloadBackup(w http.ResponseWriter, r *http.Request) {
@@ -88,10 +104,8 @@ func (a *App) downloadBackup(w http.ResponseWriter, r *http.Request) {
 	z := zip.NewWriter(f)
 	defer f.Close()
 	defer z.Close()
-	must(zipFile(z, snap, "metadata.db"))
-	out, e := z.Create("MANIFEST.json")
-	must(e)
-	must(json.NewEncoder(out).Encode(M{"app": "wusaqi-gallery", "format": 1, "created_at": nowISO(), "counts": a.counts(), "data_dir": a.data}))
+	manifest := galleryManifest{App: "wusaqi-gallery", Format: 2, Files: map[string]backupFile{}}
+	must(zipFile(z, snap, "metadata.db", manifest.Files))
 	for _, d := range []string{"uploads", "thumbs", "compressed"} {
 		must(filepath.WalkDir(filepath.Join(a.data, d), func(p string, entry fs.DirEntry, e error) error {
 			if e != nil {
@@ -104,9 +118,12 @@ func (a *App) downloadBackup(w http.ResponseWriter, r *http.Request) {
 			if e != nil {
 				return e
 			}
-			return zipFile(z, p, filepath.ToSlash(rel))
+			return zipFile(z, p, filepath.ToSlash(rel), manifest.Files)
 		}))
 	}
+	out, e := z.Create("MANIFEST.json")
+	must(e)
+	must(json.NewEncoder(out).Encode(manifest))
 	must(z.Close())
 	must(f.Close())
 	w.Header().Set("Content-Type", "application/zip")
@@ -122,21 +139,29 @@ func extractBackup(file, stage string) (int, error) {
 	defer z.Close()
 	var expanded uint64
 	files := 0
+	seen := map[string]bool{}
+	if len(z.File) > 100000 {
+		return 0, fmt.Errorf("too many backup entries")
+	}
 	for _, entry := range z.File {
 		name := strings.ReplaceAll(entry.Name, "\\", "/")
-		if strings.HasPrefix(name, "/") || strings.Contains(name, ":") || entry.Mode()&os.ModeSymlink != 0 {
+		if strings.HasPrefix(name, "/") || strings.ContainsAny(name, ":\x00") || entry.Mode()&os.ModeSymlink != 0 {
 			return 0, fmt.Errorf("invalid backup path")
 		}
 		for _, part := range strings.Split(name, "/") {
-			if part == ".." {
+			if part == ".." || part == "." {
 				return 0, fmt.Errorf("invalid backup path")
 			}
 		}
 		if entry.FileInfo().IsDir() {
 			continue
 		}
+		if !entry.Mode().IsRegular() || seen[name] || strings.Contains(name, "//") {
+			return 0, fmt.Errorf("duplicate or invalid backup entry")
+		}
+		seen[name] = true
 		if name != "metadata.db" && name != "MANIFEST.json" && !strings.HasPrefix(name, "uploads/") && !strings.HasPrefix(name, "thumbs/") && !strings.HasPrefix(name, "compressed/") {
-			continue
+			return 0, fmt.Errorf("unexpected backup entry")
 		}
 		if entry.UncompressedSize64 > (20<<30)-expanded {
 			return 0, fmt.Errorf("expanded backup larger than 20GB")
@@ -168,7 +193,47 @@ func extractBackup(file, stage string) (int, error) {
 			files++
 		}
 	}
+	if e := verifyGalleryManifest(stage, seen); e != nil {
+		return 0, e
+	}
 	return files, nil
+}
+
+func verifyGalleryManifest(stage string, seen map[string]bool) error {
+	if !seen["MANIFEST.json"] {
+		return nil
+	} // Explicit compatibility with pre-manifest backups.
+	f, e := os.Open(filepath.Join(stage, "MANIFEST.json"))
+	if e != nil {
+		return e
+	}
+	defer f.Close()
+	var m galleryManifest
+	if json.NewDecoder(io.LimitReader(f, 16<<20)).Decode(&m) != nil || m.App != "wusaqi-gallery" || (m.Format != 1 && m.Format != 2) {
+		return fmt.Errorf("wrong application or unsupported backup format")
+	}
+	if m.Format == 1 {
+		return nil
+	}
+	if len(m.Files) != len(seen)-1 {
+		return fmt.Errorf("backup file inventory mismatch")
+	}
+	for name, expected := range m.Files {
+		if name == "MANIFEST.json" || !seen[name] {
+			return fmt.Errorf("missing backup file")
+		}
+		input, e := os.Open(filepath.Join(stage, filepath.FromSlash(name)))
+		if e != nil {
+			return e
+		}
+		hash := sha256.New()
+		n, e := io.Copy(hash, input)
+		input.Close()
+		if e != nil || n != expected.Size || hex.EncodeToString(hash.Sum(nil)) != expected.SHA256 {
+			return fmt.Errorf("backup checksum mismatch")
+		}
+	}
+	return nil
 }
 func (a *App) restoreBackup(w http.ResponseWriter, r *http.Request, u M) {
 	r.Body = http.MaxBytesReader(w, r.Body, 20<<30)
@@ -238,6 +303,14 @@ func (a *App) restoreBackup(w http.ResponseWriter, r *http.Request, u M) {
 		if candidate.count("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='images'") != 1 {
 			fail(400, "备份缺少 images 表")
 		}
+		for _, table := range []string{"users", "settings"} {
+			if candidate.count("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", table) != 1 {
+				fail(400, "备份缺少账号或配置表")
+			}
+		}
+		if candidate.count("SELECT COUNT(*) FROM users WHERE role='admin'") < 1 {
+			fail(400, "备份缺少管理员账号")
+		}
 		if str(candidate.one("PRAGMA integrity_check")["integrity_check"]) != "ok" {
 			fail(400, "invalid backup database")
 		}
@@ -249,7 +322,10 @@ func (a *App) restoreBackup(w http.ResponseWriter, r *http.Request, u M) {
 		candidate.exec("DELETE FROM sessions")
 		images = candidate.count("SELECT COUNT(*) FROM images")
 		for _, im := range candidate.rows("SELECT key,c_key FROM images") {
-			pathIn(filepath.Join(stage, "uploads"), str(im["key"]))
+			original := pathIn(filepath.Join(stage, "uploads"), str(im["key"]))
+			if st, e := os.Stat(original); e != nil || !st.Mode().IsRegular() {
+				fail(400, "备份缺少原图文件")
+			}
 			pathIn(filepath.Join(stage, "compressed"), str(im["c_key"]))
 		}
 		candidate.exec("PRAGMA wal_checkpoint(TRUNCATE)")
@@ -258,45 +334,14 @@ func (a *App) restoreBackup(w http.ResponseWriter, r *http.Request, u M) {
 		must(os.MkdirAll(filepath.Join(stage, d), 0755))
 	}
 	a.exec("PRAGMA wal_checkpoint(TRUNCATE)")
-	old := filepath.Join(tmp, "previous")
-	must(os.MkdirAll(old, 0755))
-	movedOld, movedNew := []string{}, []string{}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = a.db.Close()
-			for i := len(movedNew) - 1; i >= 0; i-- {
-				d := movedNew[i]
-				if e := os.Rename(filepath.Join(a.data, d), filepath.Join(stage, d)); e != nil {
-					cleanup = false
-					log.Printf("restore rollback: %v; retained %s", e, tmp)
-				}
-			}
-			for i := len(movedOld) - 1; i >= 0; i-- {
-				d := movedOld[i]
-				if e := os.Rename(filepath.Join(old, d), filepath.Join(a.data, d)); e != nil {
-					cleanup = false
-					log.Printf("restore rollback: %v; retained %s", e, tmp)
-				}
-			}
-			a.db = openDB(filepath.Join(a.data, "metadata.db"))
-		}
-	}()
+	must(stageGalleryRestore(a.data, tmp))
+	cleanup = false // The durable marker owns this staging directory now.
+	a.restorePending.Store(true)
 	must(a.db.Close())
-	for _, d := range []string{"metadata.db", "metadata.db-wal", "metadata.db-shm", "uploads", "thumbs", "compressed"} {
-		if _, e := os.Stat(filepath.Join(a.data, d)); os.IsNotExist(e) {
-			continue
-		}
-		must(os.Rename(filepath.Join(a.data, d), filepath.Join(old, d)))
-		movedOld = append(movedOld, d)
-	}
-	for _, d := range []string{"metadata.db", "uploads", "thumbs", "compressed"} {
-		must(os.Rename(filepath.Join(stage, d), filepath.Join(a.data, d)))
-		movedNew = append(movedNew, d)
-	}
+	must(applyGalleryRestore(a.data))
 	a.db = openDB(filepath.Join(a.data, "metadata.db"))
 	a.initDB(false)
-	committed = true
+	a.restorePending.Store(false)
 	a.telegram.changed()
 	a.cleanUploadStaging()
 	a.setJob(M{"running": false, "cancel": false, "current": ""})

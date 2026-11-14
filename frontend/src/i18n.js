@@ -1,10 +1,11 @@
 import { reactive } from 'vue'
+import { readStorage, writeStorage } from './storage.js'
 
 // 轻量 i18n：中文原文作键，英文映射查表；查不到回落显示中文原文。
 // 用法：模板里 {{ t('登录') }}；语言切换即时生效（t 读取 reactive 状态）。
 // 站点以中文为主：未显式选择过语言时默认中文，顶栏可切英文（选择会记住）。
 export const i18n = reactive({
-  lang: localStorage.getItem('lg_lang') || 'zh',
+  lang: readStorage('localStorage', 'lg_lang', 'zh'),
 })
 
 const EN = {
@@ -699,7 +700,7 @@ export function t(s) {
 
 export function setLang(l) {
   i18n.lang = l
-  localStorage.setItem('lg_lang', l)
+  writeStorage('localStorage', 'lg_lang', l)
   document.documentElement.lang = l === 'zh' ? 'zh-CN' : 'en'
 }
 

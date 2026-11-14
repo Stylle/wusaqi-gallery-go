@@ -1266,3 +1266,5 @@ button.danger { color: var(--err); }
 .copyright-notice, .copyright-contact { max-width: 850px; margin: 8px auto 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
 .tag-policy-panel { margin-top: 24px; }
 .tag-policy-panel .check-line { white-space: nowrap; }
+
+.admin-menu-icon .ui-icon{display:block;width:18px;height:18px;flex-shrink:0}
