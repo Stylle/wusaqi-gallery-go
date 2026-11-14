@@ -1,6 +1,6 @@
 module github.com/Stylle/wusaqi-gallery-go/server
 
-go 1.26.0
+go 1.26.11
 
 require (
 	golang.org/x/image v0.47.0
