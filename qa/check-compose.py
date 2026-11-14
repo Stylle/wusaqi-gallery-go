@@ -59,7 +59,7 @@ def main():
     hub = yaml.safe_load(open(os.path.join(ROOT, "docker-compose.hub.yml"), encoding="utf-8"))
     check("Hub healthcheck matches", hub["services"]["gallery"]["healthcheck"]["test"] == ["CMD", "/app/gallery", "healthcheck"])
     dockerfile = open(os.path.join(ROOT, "Dockerfile"), encoding="utf-8").read()
-    check("Go is container entrypoint", 'ENTRYPOINT ["/app/gallery"]' in dockerfile)
+    check("Go starts after dedicated-data bootstrap", 'ENTRYPOINT ["/usr/local/bin/gallery-entrypoint"]' in dockerfile and 'exec gosu 10001:10001 /app/gallery' in open(os.path.join(ROOT, "gallery-entrypoint.sh"), encoding="utf-8").read())
     check("No resident Python web stack", "supervisord" not in dockerfile and "uvicorn" not in dockerfile)
 
     print(f"\n===== {passed} passed, {failed} failed =====")
