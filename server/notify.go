@@ -1,9 +1,10 @@
 package main
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	probe "github.com/Stylle/wusaqi-gallery-go/server/internal/integrationtest"
 	"io"
 	"log"
 	"net/http"
@@ -85,7 +86,9 @@ func renderNotifyJSON(tpl string, ctx M) ([]byte, error) {
 }
 
 func (a *App) sendNotify(n notification) (bool, string) {
-	s := a.settings()
+	return a.sendNotifySettings(n, a.settings())
+}
+func (a *App) sendNotifySettings(n notification, s map[string]string) (bool, string) {
 	if k := eventSwitch[n.event]; k != "" && s[k] != "1" {
 		return true, ""
 	}
@@ -152,37 +155,24 @@ func (a *App) sendNotify(n notification) (bool, string) {
 		}
 	}
 	method := s["notify_method"]
-	var b io.Reader = bytes.NewReader(payload)
-	if method == "GET" {
-		b = nil
-	}
-	req, e := http.NewRequest(method, url, b)
-	if e != nil {
-		return false, e.Error()
-	}
-	req.Header.Set("Content-Type", content)
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 wusaqi-gallery/1.0")
-	req.Header.Set("Accept", "*/*")
-	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9")
-	headers := map[string]string{}
+	headers := map[string]string{"Content-Type": content, "User-Agent": "wusaqi-gallery integration test", "Accept": "*/*"}
 	if raw := s["notify_headers"]; raw != "" {
-		if e = json.Unmarshal([]byte(raw), &headers); e != nil {
-			return false, "自定义请求头不是合法的 JSON 对象"
+		var custom map[string]string
+		if json.Unmarshal([]byte(raw), &custom) != nil {
+			return false, "自定义请求头不是合法 JSON"
+		}
+		for k, v := range custom {
+			headers[k] = v
 		}
 	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	resp, e := a.httpClient.Do(req)
-	if e != nil {
-		return false, e.Error()
-	}
-	defer resp.Body.Close()
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-	if resp.StatusCode >= 400 {
-		return false, fmt.Sprintf("HTTP %d · %s", resp.StatusCode, truncate(string(data), 300))
+	requestContext, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	_, err := probe.Webhook(requestContext, a.httpClient, method, url, headers, payload)
+	if err != nil {
+		return false, err.Error()
 	}
 	return true, ""
+
 }
 func (a *App) geo(ip string) string {
 	if localIP(ip) {

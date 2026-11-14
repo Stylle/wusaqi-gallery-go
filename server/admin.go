@@ -230,8 +230,7 @@ func (a *App) adminRoute(w http.ResponseWriter, r *http.Request) {
 	case p == "/api/admin/stats" && m == "GET":
 		respond(w, a.stats())
 	case p == "/api/admin/notify/test" && m == "POST":
-		ok, err := a.sendNotify(notification{"test", "这是一条来自 wusaqi-gallery 的测试通知 ✅", M{}})
-		respond(w, M{"ok": ok, "error": err})
+		a.testNotifyDraft(w, r)
 	default:
 		notFound()
 	}

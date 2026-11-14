@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	probe "github.com/Stylle/wusaqi-gallery-go/server/internal/integrationtest"
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
@@ -297,11 +298,17 @@ func (b *telegramBot) session(ctx context.Context, token string) (err error) {
 	if !me.IsBot || me.Username == "" {
 		return errors.New("Telegram Bot 身份校验失败")
 	}
+	b.registerMenu(ctx, token, 0)
 	fingerprint := telegramFingerprint(token)
 	b.a.dataMu.RLock()
 	s := b.a.settings()
 	b.a.dataMu.RUnlock()
 	offset := num(s["_telegram_offset"])
+	for sender := range telegramBindings(s) {
+		if id, e := strconv.ParseInt(sender, 10, 64); e == nil && b.administrator(s, id) != nil {
+			b.registerMenu(ctx, token, id)
+		}
+	}
 	if s["_telegram_token_hash"] != fingerprint {
 		// New credentials skip the backlog; old commands must not be executed
 		// after an administrator subsequently binds an account.
@@ -415,6 +422,7 @@ func (b *telegramBot) handle(ctx context.Context, token, bot string, msg *telegr
 	command, arg := telegramCommand(msg.Text, bot)
 	if command == "/bind" {
 		if b.bind(ctx, token, msg.From.ID, arg) {
+			b.registerMenu(ctx, token, msg.From.ID)
 			return b.text(ctx, token, msg.From.ID, "管理员绑定成功。发送 /random 获取随机图，/random 标签名 按标签取图，/tags 查看可用标签。")
 		}
 		return nil
@@ -557,4 +565,12 @@ func (b *telegramBot) sendFile(ctx context.Context, token string, sender int64, 
 	raw := headers.Bytes()
 	body := io.MultiReader(bytes.NewReader(raw[:boundary]), io.LimitReader(file, fi.Size()), bytes.NewReader(raw[boundary:]))
 	return b.request(ctx, token, method, writer.FormDataContentType(), body, int64(len(raw))+fi.Size(), nil)
+}
+
+func (b *telegramBot) registerMenu(ctx context.Context, token string, chat int64) {
+	commands := []probe.Command{{Command: "start", Description: "使用说明"}, {Command: "bind", Description: "绑定网站账户（后接绑定码）"}}
+	if chat > 0 {
+		commands = []probe.Command{{Command: "random", Description: "随机图片，可附标签"}, {Command: "tags", Description: "查看可用标签"}, {Command: "help", Description: "使用帮助"}, {Command: "bind", Description: "绑定网站账户（后接绑定码）"}}
+	}
+	_ = (probe.Telegram{HTTP: b.client, BaseURL: b.baseURL}).Menu(ctx, token, chat, commands)
 }

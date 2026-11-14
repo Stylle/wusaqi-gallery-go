@@ -1,4 +1,5 @@
 <script setup>
+import '../draft-test.js'
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import {
   getSettings, saveSettings, getAdminTags, getBans, getPublicSettings, getSystem,
@@ -48,7 +49,7 @@ const notifyDirty = computed(() => !!s.value && Object.keys(s.value).some(k =>
   (k.startsWith('notify_') || k === 'webhook_url') && s.value[k] !== saved.value[k]))
 const msg = ref('')
 const msgBad = ref(false)
-const saveBusy = ref(false)
+const saveBusy = ref(false), telegramTesting = ref(false)
 const toast = ref(null)
 let toastTimer = null
 function showToast(text, ok = true) {
@@ -175,11 +176,11 @@ async function loadStats() {
 }
 
 async function sendTestNotify() {
-  if (notifyBusy.value || notifyDirty.value) return
+  if (notifyBusy.value || saveBusy.value) return
   notifyBusy.value = true
   notifyMsg.value = t('发送中…')
   try {
-    const d = await testNotify(store.token)
+    const d = await window.IntegrationDraft.run(() => Object.fromEntries(['webhook_url','notify_method','notify_body_type','notify_headers','notify_body_tpl'].map(k => [k, s.value[k]])), draft => testNotify(store.token, draft))
     notifyOk.value = !!d.ok
     notifyMsg.value = d.ok ? t('测试通知已发送，请查收 ✓') : `${t('失败：')}${t(d.error) || t('未知错误')}`
     showToast(notifyMsg.value, d.ok)
@@ -546,7 +547,7 @@ watch(() => s.value?.theme_style, (v) => {
 })
 
 async function save() {
-  if (saveBusy.value) return
+  if (saveBusy.value || notifyBusy.value || telegramTesting.value) return
   if (!store.token) { msg.value = t('登录已失效，请重新登录'); showToast(msg.value, false); return }
   const numeric = groups.flatMap(g => g.items).flatMap(group => (group.fields || [])
     .filter(field => field.type === 'number').map(field => [field.k, field.label]))
@@ -815,7 +816,7 @@ const notifyPreview = computed(() => {
           </template>
 
           <div class="row" style="margin-top:16px">
-            <button :disabled="saveBusy" @click="save">{{ saveBusy ? t('保存中…') : t('保存并应用') }}</button>
+            <button :disabled="saveBusy || notifyBusy || telegramTesting" @click="save">{{ saveBusy ? t('保存中…') : t('保存并应用') }}</button>
             <span v-if="msg || dirty" class="msg-line" :class="{ bad: msgBad }" role="status">{{ msg || t('有未保存的修改') }}</span>
           </div>
 
@@ -904,7 +905,7 @@ const notifyPreview = computed(() => {
           <div v-else class="spinner"></div>
         </template>
 
-        <TelegramAdmin v-else-if="currentGroup()?.custom === 'telegram'" :settings="s" :saved="saved" :saving="saveBusy" :message="msg" :message-bad="msgBad" @save="save" @settings="value => { s = value; saved = { ...value } }" />
+        <TelegramAdmin v-else-if="currentGroup()?.custom === 'telegram'" :settings="s" :saved="saved" :saving="saveBusy" :message="msg" :message-bad="msgBad" @save="save" @testing="telegramTesting = $event" @settings="value => { s = value; saved = { ...value } }" />
 
         <!-- 通知 -->
         <template v-else-if="currentGroup()?.custom === 'notify'">
@@ -948,12 +949,12 @@ const notifyPreview = computed(() => {
               </div>
             </div>
             <div class="row" style="margin:12px 0 0">
-              <button class="ghost" :disabled="notifyBusy || saveBusy || notifyDirty" @click="sendTestNotify">
+              <button class="ghost" :disabled="notifyBusy || saveBusy" @click="sendTestNotify">
                 {{ notifyBusy ? t('发送中…') : t('发送测试') }}
               </button>
               <span class="msg-line" :class="{ bad: notifyOk === false }">{{ notifyMsg }}</span>
             </div>
-            <p v-if="notifyDirty" class="hint muted">{{ t('请先保存通知设置再发送测试') }}</p>
+            <p v-if="notifyDirty" class="hint muted">{{ t('测试使用当前表单，不会保存或启用配置') }}</p>
 
             <div class="field span-2" style="margin-top:16px">
               <label>{{ t('消息预览（实际推送内容，以「手动封禁」为例）') }}</label>
@@ -1054,7 +1055,7 @@ const notifyPreview = computed(() => {
           </div>
 
           <div class="row form-actions">
-            <button :disabled="saveBusy" @click="save">{{ saveBusy ? t('保存中…') : t('保存全部设置') }}</button>
+            <button :disabled="saveBusy || notifyBusy || telegramTesting" @click="save">{{ saveBusy ? t('保存中…') : t('保存全部设置') }}</button>
             <span v-if="msg || dirty" class="msg-line" :class="{ bad: msgBad }" role="status">{{ msg || t('有未保存的修改') }}</span>
           </div>
         </template>
@@ -1637,7 +1638,7 @@ curl -H "Authorization: Bearer $TOKEN" \
           <p class="hint muted" v-if="currentGroup()?.hint">{{ t(currentGroup().hint) }}</p>
 
           <div class="row form-actions">
-            <button :disabled="saveBusy" @click="save">{{ saveBusy ? t('保存中…') : t('保存全部设置') }}</button>
+            <button :disabled="saveBusy || notifyBusy || telegramTesting" @click="save">{{ saveBusy ? t('保存中…') : t('保存全部设置') }}</button>
             <span v-if="msg || dirty" class="msg-line" :class="{ bad: msgBad }" role="status">{{ msg || t('有未保存的修改') }}</span>
           </div>
         </template>

@@ -242,8 +242,8 @@ export const getStats = (token) =>
   fetch('/api/admin/stats', { headers: auth(token) }).then(json)
 
 // 通知测试（按后台「通知」配置发一条测试消息）
-export const testNotify = (token) =>
-  fetch('/api/admin/notify/test', { method: 'POST', headers: auth(token) }).then(json)
+export const testNotify = (token, payload = {}) =>
+  fetch('/api/admin/notify/test', { method: 'POST', headers: { ...auth(token), 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(json)
 
 // ---------- 用户管理 ----------
 export const listUsers = (token) =>

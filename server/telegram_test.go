@@ -44,6 +44,10 @@ func telegramCapture(t *testing.T, a *App) *[]telegramSent {
 	sent := []telegramSent{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		v := telegramSent{method: filepath.Base(r.URL.Path)}
+		if v.method == "setMyCommands" || v.method == "setChatMenuButton" {
+			respond(w, M{"ok": true, "result": true})
+			return
+		}
 		if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/") {
 			raw, err := io.ReadAll(r.Body)
 			if err != nil || int64(len(raw)) != r.ContentLength {
@@ -315,6 +319,8 @@ func TestTelegramLongPollingCheckpointRestartAndShutdown(t *testing.T) {
 	updates := make(chan telegramUpdate, 2)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch filepath.Base(r.URL.Path) {
+		case "setMyCommands", "setChatMenuButton":
+			respond(w, M{"ok": true, "result": true})
 		case "getMe":
 			respond(w, M{"ok": true, "result": M{"username": "GalleryBot", "is_bot": true}})
 		case "getUpdates":
