@@ -25,6 +25,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/image_worker.py backend/image_metadata.py ./
 COPY --from=server-build /gallery /app/gallery
 COPY --from=frontend-build /src/dist /app/web
+COPY LICENSE /usr/share/licenses/wusaqi-gallery/LICENSE
 ENV DATA_DIR=/data WEB_DIR=/app/web IMAGE_WORKER=/app/image_worker.py \
     PYTHON=python LISTEN_ADDR=:80 GOMEMLIMIT=40MiB GOGC=50 \
     PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 TZ=Asia/Shanghai
