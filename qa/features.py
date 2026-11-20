@@ -28,7 +28,7 @@ def suite(data):
         a, b, c = upload("one.png", tag="猫 & 风景"), upload("two.png", tag="other"), upload("one.png", user, "owned")
         aid, bid, cid = a["id"], b["id"], c["id"]
         tag_query = quote("猫 & 风景")
-        qa.check("tag random keeps existing authentication", call("GET", "/api/random?tag="+tag_query)[0] == 401)
+        qa.check("tag random follows public site access", call("GET", "/api/random?tag="+tag_query)[1]["id"] == aid)
         qa.check("random filters exact Unicode tag", call("GET", "/api/random?tag="+tag_query, token=token)[1]["id"] == aid)
         qa.check("unknown tag returns 404 without unrelated fallback", call("GET", "/api/random?tag=unknown", token=token)[0] == 404)
         qa.check("random tag uses SQL parameters", call("GET", "/api/random?tag="+quote("' OR 1=1--"), token=token)[0] == 404)

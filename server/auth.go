@@ -43,6 +43,9 @@ func (a *App) publicUser(u M) M {
 func (a *App) authRoute(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
 	switch {
+	case p == "/api/auth/random-token" && r.Method == "GET":
+		u := a.require(r, false)
+		respond(w, M{"token": a.randomToken(u)})
 	case p == "/api/auth/login" && r.Method == "POST":
 		v := body(r)
 		u := a.one("SELECT * FROM users WHERE username=? AND COALESCE(enabled,1)=1", strings.TrimSpace(str(v["username"])))

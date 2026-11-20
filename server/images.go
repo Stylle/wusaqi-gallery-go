@@ -113,8 +113,8 @@ func (a *App) images(w http.ResponseWriter, r *http.Request) {
 }
 func (a *App) random(w http.ResponseWriter, r *http.Request) {
 	s := a.settings()
-	u := a.user(r)
-	if s["random_public"] != "1" && u == nil {
+	u := a.randomRequestUser(r)
+	if s["site_public"] != "1" && u == nil {
 		a.require(r, false)
 	}
 	where, args := []string{privateFilter(r, u)}, []any{}
@@ -145,6 +145,18 @@ func (a *App) random(w http.ResponseWriter, r *http.Request) {
 	if u != nil {
 		p = "/media" + p
 	}
+	if token := r.URL.Query().Get("token"); token != "" && a.user(r) == nil && u != nil {
+		p = randomMediaURL(p, token)
+		for _, key := range []string{"viewUrl", "viewThumb", "viewCompressed"} {
+			if path := str(item[key]); path != "" {
+				item[key] = randomMediaURL(path, token)
+			}
+		}
+		item["url"] = item["viewUrl"]
+		item["thumb"] = item["viewThumb"]
+		item["compressed"] = item["viewCompressed"]
+	}
+	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("Cache-Control", "no-store")
 	if r.URL.Path == "/api/random/image" || truth(r.URL.Query().Get("redirect")) {
 		http.Redirect(w, r, p, 302)

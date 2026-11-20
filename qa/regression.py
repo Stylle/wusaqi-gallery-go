@@ -198,7 +198,7 @@ def suite(data):
         for path in ("/api/admin/upload", "/api/admin/reindex", "/api/admin/verify", "/api/unused"):
             check("removed endpoint " + path, call("POST", path, {}, token)[0] == 404)
         check("admin requires login", call("GET", "/api/admin/settings")[0] == 401)
-        check("random requires login by default", call("GET", "/api/random")[0] == 401)
+        check("public random reads the migrated gallery without login", call("GET", "/api/random")[0] == 200)
         check("invalid JSON returns 400", call("POST", "/api/auth/login", b"{bad", headers={"Content-Type": "application/json"})[0] == 400)
         check("invalid cursor returns 400", call("GET", "/api/images?cursor=bad")[0] == 400)
         first = call("GET", "/api/images?limit=36", token=token)[1]

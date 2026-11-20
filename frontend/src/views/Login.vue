@@ -33,7 +33,7 @@ async function submit() {
         <img src="/logo.svg" alt="" style="width:30px;height:30px" />
         {{ site.site_title }}
       </h2>
-      <p class="muted" style="margin-top:-6px">{{ t('登录后可上传图片、复制链接与使用随机图 API。') }}</p>
+      <p class="muted" style="margin-top:-6px">{{ t('登录后可上传图片、使用个人随机接口与管理自己的内容。') }}</p>
 
       <div class="field">
         <label for="login-username">{{ t('用户名') }}</label>

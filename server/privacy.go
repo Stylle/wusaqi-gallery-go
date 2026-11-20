@@ -145,6 +145,10 @@ func (a *App) serveMedia(w http.ResponseWriter, r *http.Request) bool {
 		}
 		s := a.settings()
 		u := a.mediaUser(r)
+		if internal && u == nil {
+			u = a.randomTokenUser(r.URL.Query().Get("random_token"))
+		}
+		w.Header().Set("Referrer-Policy", "no-referrer")
 		for _, im := range images {
 			if internal {
 				if !canViewImage(im, u) || (u == nil && (s["site_public"] != "1" || !validViewer(r, s))) {

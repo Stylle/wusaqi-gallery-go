@@ -225,13 +225,13 @@ func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	p, m := r.URL.Path, r.Method
 	w.Header().Set("Cache-Control", "no-store")
-	if a.settings()["site_public"] != "1" && a.user(r) == nil && p != "/api/health" && p != "/api/public/settings" && p != "/api/auth/login" && p != "/api/auth/logout" {
+	if a.settings()["site_public"] != "1" && a.randomRequestUser(r) == nil && p != "/api/health" && p != "/api/public/settings" && p != "/api/auth/login" && p != "/api/auth/logout" {
 		fail(401, "站点未开放公开访问，请先登录")
 	}
 	switch {
 	case p == "/api/health" && m == "GET":
 		a.count("SELECT 1")
-		respond(w, M{"ok": true, "version": "1.2.2"})
+		respond(w, M{"ok": true, "version": "1.2.3"})
 	case p == "/api/public/settings" && m == "GET":
 		s := a.settings()
 		out := M{}
@@ -247,6 +247,7 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 			}
 			out[k] = strings.Join(visible, ",")
 		}
+		out["random_public"] = s["site_public"] // Legacy clients follow the public-access switch.
 		a.setViewerCookie(w, r, s)
 		out["upload_max_mb"] = s["upload_max_mb"]
 		out["upload_formats"] = "jpg,jpeg,png,webp,avif,gif,bmp"

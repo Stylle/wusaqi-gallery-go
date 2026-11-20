@@ -60,6 +60,8 @@ export const changePassword = (token, oldPwd, newPwd) =>
   }).then(r => json(r, { noUnauth: true }))
 
 // ---------- 随机图 ----------
+export const getRandomToken = token => fetch('/api/auth/random-token', {headers:auth(token),cache:'no-store'}).then(json)
+
 export const getRandom = (variant, token, tag = '') =>
   fetch(`/api/random?${new URLSearchParams({ variant, ...(tag ? { tag } : {}) })}`, { headers: auth(token) }).then(json)
 

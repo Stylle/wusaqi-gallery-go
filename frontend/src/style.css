@@ -1268,3 +1268,11 @@ button.danger { color: var(--err); }
 .tag-policy-panel .check-line { white-space: nowrap; }
 
 .admin-menu-icon .ui-icon{display:block;width:18px;height:18px;flex-shrink:0}
+
+/* Random images use the full content area without cropping. */
+.random-stage {display:flex;align-items:center;justify-content:center;min-height:clamp(300px,65vh,960px);background:var(--surface);border:0.5px solid var(--border);border-radius:12px;overflow:hidden;margin-top:22px}
+.randbox .random-stage img {display:block;width:100%;height:clamp(300px,72vh,1000px);max-width:100%;max-height:none;object-fit:contain;border:0;border-radius:0;transform:none}
+.random-api {text-align:left;margin:28px auto 0;max-width:1100px}
+.random-api .actions {justify-content:flex-start}
+.random-endpoint {display:block;padding:12px;background:var(--bg);border-radius:8px;white-space:normal;overflow-wrap:anywhere;font-size:13px;line-height:1.6}
+@media(max-width:600px){.random-stage{min-height:300px}.randbox .random-stage img{height:60vh;min-height:300px}.random-api{padding:18px}.randbox> .actions {justify-content:flex-start}}

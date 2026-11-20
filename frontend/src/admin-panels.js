@@ -9,7 +9,7 @@ export const panels = [
       hint: '纯色 = 单一主色，素净清爽；炫彩 = 渐变彩色，更活泼' },
   ] },
   { id: 'share', icon: '🔗', label: '访问分享', fields: [
-    { k: 'site_public', label: '允许站点公开访问', type: 'switch', hint: '关闭后画廊、标签、随机图与全部外链均需登录或停止公开服务；登录入口保留' },
+    { k: 'site_public', label: '允许站点公开访问', type: 'switch', hint: '开启后游客可浏览画廊并调用随机图接口，无需 Token；关闭后需登录或使用个人随机图 Token，公开图片外链失效' },
     { k: 'external_links_enabled', label: '允许图片外链', type: 'switch', hint: '关闭后原图、压缩图、缩略图的分享地址全部失效；站内浏览不受影响' },
     { k: 'share_base_url', label: '分享基址', hint: '复制链接用的域名，如 https://img.example.com；留空 = 用当前访问地址' },
     { k: 'upload_default_tags', label: '上传默认标签', hint: '逗号分隔，上传页默认选中第一个' },
@@ -31,7 +31,6 @@ export const panels = [
   { id: 'login', icon: '🔐', label: '登录设置', fields: [
     { k: 'session_hours', label: '未勾「记住我」有效期 (小时)', type: 'number' },
     { k: 'remember_days', label: '勾选「记住我」有效期 (天)', type: 'number' },
-    { k: 'random_public', label: '随机图 API 对游客开放', type: 'switch', hint: '同时受站点公开访问、外链总开关与标签外链规则限制；私密图片不对外开放' },
   ] },
   { id: 'users', icon: '👥', label: '用户管理', custom: 'users' },
   { id: 'traffic', icon: '🚦', label: '流量限制', fields: [

@@ -3,10 +3,10 @@
   "components": [
     {
       "name": "theme",
-      "version": "2026-11-14",
+      "version": "2026-11-20",
       "source": "frontend/src/style.css",
       "mirrors": [],
-      "sha256": "b7c00df218c4302e5c93d23baccc6c8186cfbc555bcb3b767ed699bcece9bd15"
+      "sha256": "89d64340821c7331bd470a57d6f9feb4aa9c0738bc93000c0cb43cc724a25cfd"
     },
     {
       "name": "navigation-icons",

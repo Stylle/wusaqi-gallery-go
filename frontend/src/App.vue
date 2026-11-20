@@ -39,7 +39,7 @@ const pwdForm = ref({ old: '', new: '' })
 // 校验中（有 token 但还没验完）不闪锁屏：交给页面内的 ensureAuth 处理
 const needsLogin = computed(() => !!locked[route.value] || (site.site_public !== '1' && !['login', 'about'].includes(route.value)))
 const isLocked = computed(() =>
-  needsLogin.value && !(route.value === 'random' && site.random_public === '1' && site.site_public === '1') && !store.ok && (store.checked || !store.token))
+  needsLogin.value && !(route.value === 'random' && site.site_public === '1') && !store.ok && (store.checked || !store.token))
 const authPending = computed(() => needsLogin.value && !!store.token && !store.checked && !store.ok)
 
 // 全局「登录已失效」提示

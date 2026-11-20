@@ -1221,9 +1221,10 @@ POST /api/auth/logout    {{ t('注销当前 token') }}
 GET  /api/auth/me        {{ t('当前用户 + 用量') }}
 POST /api/auth/password  {"old":"***","new":"***"}</pre>
 
-          <h3>{{ t('随机图（默认需登录；后台可开放为公开）') }}</h3>
-          <pre>GET /api/random?variant=compressed|original[&amp;redirect=true][&amp;tag=cat]
-GET /api/random/image?variant=compressed|original[&amp;tag=cat]   # 302 {{ t('直链') }}
+          <h3>{{ t('随机图（跟随站点公开访问，个人接口支持只读 Token）') }}</h3>
+          <pre>GET /api/auth/random-token  # Bearer auth → read-only random token
+GET /api/random?variant=compressed|original[&amp;redirect=true][&amp;tag=cat]
+GET /api/random/image?variant=compressed|original[&amp;tag=cat][&amp;token=个人取图Token]   # 302 {{ t('直链') }}
 # Optional tag: exact match; URL-encode its value. No matches: 404.</pre>
 
           <h3>{{ t('图片（登录）') }}</h3>

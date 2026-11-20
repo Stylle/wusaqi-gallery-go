@@ -677,6 +677,21 @@ Object.assign(EN, {
   '请确认清空缩略图与压缩图': 'Confirm clearing thumbnails and compressed images',
 })
 
+Object.assign(EN, {
+ '登录后可上传图片、使用个人随机接口与管理自己的内容。':'Sign in to upload, use personal random endpoints and manage your content.',
+ '随机图（跟随站点公开访问，个人接口支持只读 Token）':'Random images (follow public access; personal endpoints support read-only tokens)',
+ '随机图接口':'Random image endpoint',
+ '个人接口含只读取图 Token，修改密码后失效，账号停用期间不可用。请勿公开分享。':'Personal links contain a read-only image token. Changing the password or disabling the account revokes it. Keep it private.',
+ '站点已开放，无需登录或 Token 即可获取公开随机图。':'Public access is enabled. No sign-in or token is needed for public random images.',
+ '复制个人随机接口':'Copy personal endpoint',
+ '复制随机图接口':'Copy random endpoint',
+ '复制公开随机接口':'Copy public endpoint',
+ '已复制个人随机接口':'Personal endpoint copied',
+ '已复制公开随机接口':'Public endpoint copied',
+ '公开接口需开启站点公开访问与图片外链；个人接口仍可凭 Token 取图。':'Public endpoints require public access and external image links. Personal endpoints can still use a token.',
+ '开启后游客可浏览画廊并调用随机图接口，无需 Token；关闭后需登录或使用个人随机图 Token，公开图片外链失效':'When enabled, guests can browse and request random images without a token. Otherwise sign-in or a personal random-image token is required, and public image links stop working.',
+})
+
 const EN_PATTERNS = [
   [/^(.+?)上传已达上限 (\d+) 张，请稍后再试或联系管理员$/, m => `${t(m[1])} upload limit reached (${m[2]}). Try later or ask the administrator.`],
   [/^超过单图上限 (\d+)MB$/, m => `Exceeds the per-image limit of ${m[1]} MB`],
