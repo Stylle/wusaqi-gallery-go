@@ -1,5 +1,5 @@
-// Rendering always uses the internal viewing path. Only shareUrls may be
-// copied as an external link; an absent entry must never fall back to url.
+// Rendering uses internal viewing paths; copying uses explicit authorized URLs.
+// Never fall back to a cookie-only viewing URL or a login-session credential.
 export function prepareMedia(value) {
   if (!value || typeof value !== 'object') return value
   if (Array.isArray(value)) return value.map(prepareMedia)
@@ -8,6 +8,6 @@ export function prepareMedia(value) {
   return value
 }
 
-export function shareUrl(item, variant) {
-  return item?.shareUrls?.[variant] || ''
+export function shareUrl(item, variant, authenticated = false) {
+  return (authenticated ? item?.personalUrls?.[variant] : '') || item?.shareUrls?.[variant] || ''
 }

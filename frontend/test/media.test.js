@@ -14,3 +14,9 @@ test('upload receipts and gallery items preserve only explicit external links', 
   assert.equal(shareUrl(value.results[0].item, 'original'), '/files/a.png')
   assert.equal(shareUrl(value.results[0].item, 'compressed'), '')
 })
+test('personal copying requires current login and never falls back to viewing URLs', () => {
+  const item = { personalUrls: { original: '/media/files/a.png?random_token=fixture-read-only' }, shareUrls: {}, url: '/media/files/a.png' }
+  assert.equal(shareUrl(item, 'original', true), item.personalUrls.original)
+  assert.equal(shareUrl(item, 'original', false), '')
+  assert.equal(shareUrl(item, 'compressed', true), '')
+})

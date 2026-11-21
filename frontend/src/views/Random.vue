@@ -1,9 +1,10 @@
 <script setup>
-import { shareUrl } from '../media.js'
+import { shareUrl as mediaShareUrl } from '../media.js'
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { getRandom, getTags, copyText, getRandomToken } from '../api.js'
 import { absUrl, site } from '../site.js'
 import { store } from '../auth.js'
+const shareUrl = (item, variant) => mediaShareUrl(item, variant, store.ok)
 import { t } from '../i18n.js'
 import { randomEndpoint } from '../random-url.js'
 

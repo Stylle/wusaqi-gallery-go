@@ -1,8 +1,9 @@
 <script setup>
 import { ref, reactive, onMounted, onUnmounted, computed, watch } from 'vue'
 import { uploadSessionRequest, getTags, copyText, fmtSize } from '../api.js'
-import { shareUrl } from '../media.js'
+import { shareUrl as mediaShareUrl } from '../media.js'
 import { store, isAdmin, ensureAuth, refreshMe } from '../auth.js'
+const shareUrl = (item, variant) => mediaShareUrl(item, variant, store.ok)
 import { fileChecksum, pendingClientId, forgetPending, transferFile, monitorUpload } from '../upload-flow.js'
 import { absUrl, defaultUploadTags, site } from '../site.js'
 import { t } from '../i18n.js'

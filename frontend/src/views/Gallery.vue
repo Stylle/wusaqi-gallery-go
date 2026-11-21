@@ -1,9 +1,10 @@
 <script setup>
-import { shareUrl } from '../media.js'
+import { shareUrl as mediaShareUrl } from '../media.js'
 import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import { columnsFor, masonryColumns } from '../layout.js'
 import { getImages, getTags, copyText, patchImage, deleteImage, fmtSize, batchImages, downloadImages } from '../api.js'
 import { store, ui, isAdmin, setViewSize } from '../auth.js'
+const shareUrl = (item, variant) => mediaShareUrl(item, variant, store.ok)
 import { absUrl } from '../site.js'
 import { t } from '../i18n.js'
 

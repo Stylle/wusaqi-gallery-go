@@ -45,7 +45,16 @@ func (a *App) itemJSON(r, u M) M {
 		}
 		return "/media" + str(p)
 	}
-	return M{"viewUrl": "/media" + original, "viewThumb": view(thumb), "viewCompressed": view(c), "shareUrls": shares, "private": str(r["tag"]) == privateTag, "id": r["id"], "key": r["key"], "url": original, "thumb": thumb, "compressed": c, "width": r["width"], "height": r["height"], "mimeType": r["mime"], "size": r["size"], "compressedSize": csize, "createdAt": r["created_at"], "tag": str(r["tag"]), "filename": filepath.Base(str(r["key"])), "origName": str(r["orig_name"]), "ownerId": str(r["owner_id"]), "owner": str(r["owner_name"]), "mine": own, "canEdit": edit}
+	personal := M{}
+	if u != nil && str(r["tag"]) != privateTag {
+		token := a.randomToken(u)
+		for variant, p := range (M{"original": original, "thumb": thumb, "compressed": c}) {
+			if p != nil && str(p) != "" {
+				personal[variant] = randomMediaURL("/media"+str(p), token)
+			}
+		}
+	}
+	return M{"viewUrl": "/media" + original, "viewThumb": view(thumb), "viewCompressed": view(c), "shareUrls": shares, "personalUrls": personal, "private": str(r["tag"]) == privateTag, "id": r["id"], "key": r["key"], "url": original, "thumb": thumb, "compressed": c, "width": r["width"], "height": r["height"], "mimeType": r["mime"], "size": r["size"], "compressedSize": csize, "createdAt": r["created_at"], "tag": str(r["tag"]), "filename": filepath.Base(str(r["key"])), "origName": str(r["orig_name"]), "ownerId": str(r["owner_id"]), "owner": str(r["owner_name"]), "mine": own, "canEdit": edit}
 }
 func (a *App) derivativeURL(dir, key string) any {
 	if key == "" {
